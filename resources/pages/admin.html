@@ -1,0 +1,92 @@
+<!doctype html>
+<html>
+
+<body>
+
+  <head>
+    <title>Phishmonger</title>
+    <link rel="shortcut icon" href="favicon.ico" type="image/x-icon" />
+    <link rel="stylesheet" href="/static/css/admin.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="/static/css/bootstrap.min.css">
+    <script src="/static/js/jquery-3.4.1.slim.min.js"></script>
+    <script src="/static/js/popper.min.js"></script>
+    <script src="/static/js/2d526206ed.js"></script>
+    <script src="/static/js/bootstrap.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/static/js/jquery.min.js"></script>
+    <script>
+      $(function () {
+        var socket = io();
+        $.getJSON("/list_templates", function (data) {
+          $.each(data, function (key, val) {
+            $("#template_list").append("<option value='" + val + "'>" + val + "</option>");
+          });
+        });
+
+        socket.on('starting_campaign', function (start_event) {
+          selector = "#" + start_event.campaign.replace(/(:|\.|\[|\]|,|=|@| )/g, "\\$1")
+          $($(selector)[0]).children('td.start_timestamp')[0].innerHTML = new Date(start_event.timestamp).toLocaleString()
+        });
+
+        socket.on('scheduled_campaign', function (schedule_event) {
+          selector = "#" + schedule_event.campaign.replace(/(:|\.|\[|\]|,|=|@| )/g, "\\$1")
+          $($(selector)[0]).children('td.scheduled_start')[0].innerHTML = new Date(schedule_event.timestamp).toLocaleString()
+        });
+
+        socket.on('ending_campaign', function (end_event) {
+          selector = "#" + end_event.campaign.replace(/(:|\.|\[|\]|,|=|@| )/g, "\\$1")
+          $($(selector)[0]).children('td.end_timestamp')[0].innerHTML = new Date(end_event.timestamp).toLocaleString()
+        });
+
+        $.getJSON("/list_campaigns", function (data) {
+          $.each(data, function (key, val) {
+            let concat = val.phishing_link.includes('?')?'&':'?'
+            let human_scheduled = (val.scheduled_start == null)?'':new Date(val.scheduled_start).toLocaleString()
+            let human_start = (val.start_timestamp == null)?'':new Date(val.start_timestamp).toLocaleString()
+            let human_end = (val.end_timestamp == null)?'':new Date(val.end_timestamp).toLocaleString()
+            $("#campaigns").append(` \
+              <tr id="${val.name}">\
+                <td><a href="/track_campaign?campaign=${val.name}&market_id=${val.market_id}">${val.name}</a></td>\
+                <td>${val.mail_server}</td>\
+                <td>${val.phishing_link}${concat}${val.id_parameter}=l78Vq5</td>\
+                <td>${val.delay.toString()}</td>\
+                <td class="scheduled_start">${human_scheduled}</td>\
+                <td class="start_timestamp">${human_start}</td>\
+                <td class="end_timestamp">${human_end}</td>\
+                <td><a class="btn btn-primary" href="/edit_campaign?campaign=${val.name}"><i class="fas fa-pencil-alt"></i></a></td>\
+              </tr>\
+            ` );
+          });
+        });
+      });
+    </script>
+  </head>
+
+  <body>
+
+    <nav class="custom-nav">
+      <form class="form-inline" action="create_campaign" method="get">
+        <select class="custom-select" id="template_list" name="template">
+        </select>
+        <button type="submit" class="btn btn-primary mr-2">Campaign from Template</button>
+        <label class="my-1 mr-sm-2">OR</label>
+        <a class="btn btn-primary" href="/create_campaign"><i class="fas fa-plus"></i> Create Campaign</a>
+        <label class="my-1 mr-sm-2">OR</label>
+        <a class="btn btn-primary" href="/phishmarket"><i class="fas fa-plus"></i> Visit the Phish Market</a>
+      </form>
+    </nav>
+    <table class="table" id="campaigns">
+      <tr>
+        <th>Campaign</th>
+        <th>Mail Server</th>
+        <th>Link</th>
+        <th>Delay</th>
+        <th>Scheduled Start</th>
+        <th>Start Time</th>
+        <th>End Time</th>
+        <th>Edit</th>
+      </tr>
+    </table>
+  </body>
+
+</html>

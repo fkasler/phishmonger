@@ -1,0 +1,279 @@
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Phish Market</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="description" content="">
+    <meta name="author" content="ph3eds">
+    <link rel="icon" href="/favicon.ico">
+
+    <link rel="canonical" href="https://getbootstrap.com/docs/4.0/examples/album/">
+
+    <!-- Bootstrap core CSS -->
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Custom styles for this template -->
+    <link href="/static/css/album.css" rel="stylesheet">
+
+    <script src="/static/js/jquery.min.js"></script>
+    <script src="/static/js/popper.min.js"></script>
+    <script src="/static/js/bootstrap.min.js"></script>
+    <script src="/static/js/holder.min.js"></script>
+
+    <script>
+      $(function () {
+        
+        function getTemplateImage(template_id, cb){
+          $.ajax(
+            `/phishmarket/template/${template_id}/image`, 
+            {
+              contentType : 'application/json',
+              type : 'GET'
+            } 
+          ).done(function( data ) {
+            cb(data)
+          })
+        }
+
+        function getTemplateAuthor(ich_id, cb){
+          $.ajax(
+            `/phishmarket/user/${ich_id}`, 
+            {
+              contentType : 'application/json',
+              type : 'GET'
+            } 
+          ).done(function( data ) {
+            cb(data)
+          })
+        }
+
+        function viewTemplate(template_id){
+          $.ajax(
+            `/phishmarket/template/${template_id}`, 
+            {
+              contentType : 'application/json',
+              type : 'GET'
+            } 
+          ).done(function( data ) {
+            console.log(data)
+            let test_mail = data.mime_content
+            let emailHTML = test_mail.substring(
+              test_mail.search('<html.*>'),
+              test_mail.search('</html.*>') + 7
+            )
+            let modalContent = document.getElementById("emailHTML");
+            modalContent.innerHTML = emailHTML;
+
+            let imageNodes = modalContent.getElementsByTagName("img");
+            let images = Array.from(imageNodes);
+            images.forEach(image => {
+              let imageSrc = image.src.split(":")[1]
+
+              let cidRaw = test_mail.substring(
+                test_mail.lastIndexOf(imageSrc),
+                test_mail.indexOf("--", test_mail.lastIndexOf(imageSrc))
+              )
+
+              let cid = cidRaw.substring(
+                cidRaw.indexOf("\n\n"),
+                cidRaw.lastIndexOf("\n")
+              )
+              image.src = "data:image/png;base64," + cid
+            });
+            $('#use_template_from_preview').attr('onclick', '');
+            $('#use_template_from_preview').unbind('click');
+            $('#use_template_from_preview').click(function(){useTemplate(data.template_id)});
+          })
+        }
+
+        function useTemplate(template_id){
+          window.location = `/create_campaign?phishmarket_template=${template_id}`
+        }
+
+        function deleteTemplate(template_id){
+          safety_check = prompt("WARNING: You are about to delete this template, its scorecards, and any trace it ever existed.\nIf you are sure this is what you would like to do, type the following:\n\"Press the red button!\"")
+          if (safety_check == "Press the red button!") {
+            $.ajax(
+              `/phishmarket/template/${template_id}`,
+              {
+                contentType : 'application/json',
+                type : 'DELETE'
+              }
+            ).done(function( data ) {
+              console.log(data)
+            })
+          }
+        }
+
+        function displayTemplates(templates){
+          templates.forEach(function(template){
+            $("#gallery").append(` \
+              <div class="col-md-4 template-preview">\
+                <div class="card mb-4 box-shadow">\
+                  <img class="card-img-top" data-src="holder.js/100px225?theme=thumb&bg=55595c&fg=eceeef&text=Thumbnail" alt="Template Preview">\
+                  <div class="card-body">\
+                    <p class="card-text">${template.title}</p>\
+                    <div class="d-flex justify-content-between align-items-center">\
+                      <div class="btn-group">\
+                        <button type="button" class="view_template btn btn-sm btn-outline-secondary" data-toggle="modal" data-target="#previewModal">View</button>\
+                        <button type="button" class="use_template btn btn-sm btn-outline-secondary">Use</button>\
+                        <button type="button" class="delete_template btn btn-sm btn-outline-secondary">Delete</button>\
+                      </div>\
+                      <small class="text-muted"></small>\
+                    </div>\
+                  </div>\
+                </div>\
+              </div>\
+            `);
+            let new_template = $("#gallery").children().last()[0]
+            let template_image = new_template.getElementsByTagName("img")[0]
+            let template_author = $("#gallery").children().last()[0].getElementsByTagName("small")[0]
+            getTemplateImage(template.template_id, function(preview){
+              template_image.src = preview.image
+            })
+            getTemplateAuthor(template.ich_id, function(author){
+              template_author.innerText = author.handle
+            })
+            let view_temp = new_template.getElementsByClassName("view_template")[0]
+            view_temp.addEventListener("click", function(){viewTemplate(template.template_id)}, false)
+            let use_temp = new_template.getElementsByClassName("use_template")[0]
+            use_temp.addEventListener("click", function(){useTemplate(template.template_id)}, false)
+            let delete_temp = new_template.getElementsByClassName("delete_template")[0]
+            delete_temp.addEventListener("click", function(){deleteTemplate(template.template_id)}, false)
+          })
+        }
+
+        function search_templates(ich_id, title, description, limit, offset){
+          let search = {
+            filter:{
+              ich_id: ich_id,
+              title: title,
+              short_description: description
+            },
+            limit: limit,
+            offset: offset
+          } 
+          $.ajax(
+            "/phishmarket/template/list", 
+            {
+              data: JSON.stringify(search),
+              contentType : 'application/json',
+              type : 'POST'
+            } 
+          ).done(function( data ) {
+            displayTemplates(data)
+          })
+        }
+
+        $(document).on('keyup', '.search_field', function () {
+          let template_name = $("#name_search").val()
+          let description = $("#description_search").val()
+          //let author = $("#author_search").val()
+          $(".template-preview").remove()
+          search_templates("",template_name,description,9,0)
+        })
+
+        search_templates("","","",9,0)
+        
+
+      })
+    </script>
+  </head>
+
+  <body>
+
+    <div class="modal fade" id="previewModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog modal-xl" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="previewModalLabel">View Template</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div id="emailHTML" class="modal-body">
+
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+          <button type="button" class="btn btn-primary" id="use_template_from_preview" onclick=""><i
+            class="fas fa-upload"></i> Use Template</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+    <header>
+      <div class="collapse bg-dark" id="navbarHeader">
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-8 col-md-7 py-4">
+              <h4 class="text-white">About</h4>
+              <p class="text-muted">Add some information about the album below, the author, or any other background context. Make it a few sentences long so folks can pick up some informative tidbits. Then, link them off to some social networking sites or contact information.</p>
+            </div>
+            <div class="col-sm-4 offset-md-1 py-4">
+              <h4 class="text-white">Contact</h4>
+              <ul class="list-unstyled">
+                <li><a href="#" class="text-white">Follow on Twitter</a></li>
+                <li><a href="#" class="text-white">Like on Facebook</a></li>
+                <li><a href="#" class="text-white">Email me</a></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="navbar navbar-dark bg-dark box-shadow">
+        <div class="container d-flex justify-content-between">
+          <a href="#" class="navbar-brand d-flex align-items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+            <strong>Phish Market</strong>
+          </a>
+          <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarHeader" aria-controls="navbarHeader" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <table class="table" id="events">
+      <tr>
+        <tr>
+          <th>Template</th>
+          <th>Description</th>
+          <!--<th>Author</th>-->
+        </tr>
+        <td><input class="form-control search_field" id="name_search" type="text" style="width:100%"></input></td>
+        <td><input class="form-control search_field" id="description_search" type="text" style="width:100%"></input></td>
+        <!--<td><input class="form-control search_field" id="author_search" type="text" style="width:100%"></input></td>-->
+      </tr>
+    </table>
+
+    <main role="main">
+
+      <div class="album py-5 bg-light">
+        <div class="container">
+
+          <div class="row" id="gallery">
+            
+            
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <footer class="text-muted">
+      <div class="container">
+        <p class="float-right">
+          <a href="#">Back to top</a>
+        </p>
+        <p>Album example is &copy; Bootstrap, but please download and customize it for yourself!</p>
+        <p>New to Bootstrap? <a href="../../">Visit the homepage</a> or read our <a href="../../getting-started/">getting started guide</a>.</p>
+      </div>
+    </footer>
+
+  </body>
+</html>

@@ -1,0 +1,32 @@
+$themeGray: #f9f7f7;
+$themeSoft: #dbe2ef;
+$themeMain: #3f72af;
+$themeDark: #112d4e;
+
+form {
+  display: inline;
+}
+
+.custom-nav {
+  width: 100%;
+  height: auto;
+  padding: 10px;
+  background-color: $themeDark;
+  margin-bottom: 50px;
+  color: white;
+}
+
+// overrides while I'm using the CDN
+.btn-primary {
+  background-color: $themeMain !important;
+  border-color: $themeMain !important;
+  color: white !important;
+}
+
+a {
+  color: $themeMain !important;
+}
+
+.table {
+  color: $themeDark !important;
+}

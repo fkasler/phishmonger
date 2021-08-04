@@ -1,0 +1,457 @@
+<!doctype html>
+<html>
+
+<body style="background-color:#f2f2f2;">
+
+  <head>
+    <title>Phishmonger</title>
+    <link rel="shortcut icon" href="favicon.ico">
+    <link rel="stylesheet" href="/static/css/trackCamp.css">
+    <link rel="stylesheet" href="/static/css/bootstrap.min.css">
+    <script src="/static/js/jquery-3.4.1.slim.min.js"></script>
+    <script src="/static/js/popper.min.js"></script>
+    <script src="/static/js/bootstrap.min.js"></script>
+    <script src="/static/js/2d526206ed.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/static/js/Graph.min.js"></script>
+    <script src="/static/js/d3.v2.min.js"></script>
+    <script src="/static/js/timeknots.min.js"></script>
+    <script src="/static/js/jquery-1.11.1.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/static/js/jquery.min.js"></script>
+    <script src="/static/js/html2canvas.min.js"></script>
+    <script src="/static/js/FileSaver.min.js"></script>
+    <script src="/static/js/jquery-ui.min.js">
+      </script>
+    <script type="text/javascript" src="/static/js/indent.js"></script>
+
+    <style>
+      .smtp_content {
+        width: 100%;
+        border-radius: 5px;
+        padding: 5px;
+      }
+    </style>
+
+    <script>
+
+      function reloadPreview() {
+        let emailContent = document.getElementsByClassName("smtp_content")[0].value
+        let emailHTML = emailContent.substring(
+          emailContent.search('<html.*>'),
+          emailContent.search('</html.*>') + 7
+        )
+        emailHTML = emailHTML.replace(/SuppliedPhishingLink/g,$('#supplied_link').val())
+        let modalContent = document.getElementById("emailHTML");
+        modalContent.innerHTML = emailHTML;
+
+        let imageNodes = modalContent.getElementsByTagName("img");
+        let images = Array.from(imageNodes);
+        images.forEach(image => {
+          let imageSrc = image.src.split(":")[1]
+
+          let cidRaw = emailContent.substring(
+            emailContent.lastIndexOf(imageSrc),
+            emailContent.indexOf("--", emailContent.lastIndexOf(imageSrc))
+          )
+
+          let cid = cidRaw.substring(
+            cidRaw.indexOf("\n\n"),
+            cidRaw.lastIndexOf("\n")
+          )
+          image.src = "data:image/png;base64," + cid
+        });
+      }
+
+      $(function () {
+        captured_mail = ''
+        var socket = io();
+        socket.on('server_message', function (msg) {
+          alert(msg)
+        });
+        socket.on('smtp_command', function (smtp) {
+          if (smtp.campaign == 'test') {
+            $('#smtp_commands').append($('<li type="text" class="smtp_command">').text(smtp.data));
+          }
+        });
+        socket.on('replace_content_holder', function (request) {
+          $("#email").children(".smtp_header, .smtp_content").each(function () {
+            find_regex = new RegExp(request.replacement_string, 'g')
+            replacement = $(this).val().replace(find_regex, request.content.match(/.{1,76}/g).join('\n'))
+            //replacement = $(this).val().replace(find_regex, request.content)
+            $(this).val(replacement)
+          });
+          $(".smtp_content").each(function () {
+            this.style.height = (this.scrollHeight) + 10 + 'px';
+          });
+        });
+        $("#clear_smtp_commands").click(function () {
+          event.preventDefault()
+          $("#smtp_commands").empty()
+        });
+        $("#find_and_replace").click(function () {
+          $("#email").children(".smtp_header, .smtp_content").each(function () {
+            find_regex = new RegExp($("#find_string").val(), 'g')
+            replacement = $(this).val().replace(find_regex, $("#replace_string").val())
+            $(this).val(replacement)
+          });
+        });
+        $("#copy_email").click(function () {
+          event.preventDefault()
+          var test_mail = $($(".smtp_content")[0]).val()
+          copy_to_clipboard(test_mail)
+        });
+        $("#delete_campaign").click(function () {
+          safety_check = prompt("WARNING: You are about to delete this campaign, its settings, targets, events, and any trace it ever existed.\nIf you are sure this is what you would like to do, type the following:\n\"Press the red button!\"")
+          if (safety_check == "Press the red button!") {
+            campaign_name = decodeURI(getUrlVars()["campaign"])
+            $.ajax(
+              "/delete_campaign",
+              {
+                data: JSON.stringify({campaign: campaign_name}),
+                contentType : 'application/json',
+                type : 'DELETE'
+              }
+            ).done(function( data ) {
+              console.log(data)
+            })
+            setTimeout(function () { location.href = "/admin" }, 2000);
+          }
+        });
+        $("#update_campaign").click(function () {
+          var test_mail = $($(".smtp_content")[0]).val()
+          mail_object = { "mail_data": test_mail }
+          $(".panel_input").each(function () {
+            mail_object[$(this).attr('id')] = $(this).val()
+          })
+          mail_object["secure_mail"] = $("#secure_mail_checkbox").prop('checked');
+          mail_object["dkim"] = $("#dkim_checkbox").prop('checked');
+          campaign_name = getUrlVars()["campaign"]
+          mail_object.campaign_name = decodeURI(campaign_name)
+          $.ajax(
+            "/update_campaign", 
+            {
+              data: JSON.stringify(mail_object),
+              contentType : 'application/json',
+              type : 'PUT'
+            } 
+          ).done(function( data ) {
+            alert(data)
+          })
+        })
+        $("#send_test").click(function () {
+          event.preventDefault()
+          var test_mail = $($(".smtp_content")[0]).val()
+          mail_object = { "mail_data": test_mail }
+          $(".panel_input").each(function () {
+            mail_object[$(this).attr('id')] = $(this).val()
+          })
+          mail_object["secure_mail"] = $("#secure_mail_checkbox").prop('checked');
+          mail_object["dkim"] = $("#dkim_checkbox").prop('checked');
+          mail_object["campaign"] = 'test';
+          $.ajax(
+            "/send_test_email", 
+            {
+              data: JSON.stringify(mail_object),
+              contentType : 'application/json',
+              type : 'POST'
+            } 
+          ).done(function( data ) {
+            console.log(data)
+          })
+        });
+        $(document).on('click', '.attach_images', function () {
+          text_area = $(this).nextAll('textarea').first()
+          input = text_area.val()
+          boundary_line = $(this).prevAll('.smtp_boundary').first().val()
+          image_regex = /src=['"](http[^'"]+)['"]/ig
+          image_count = 0
+          while (image_url = image_regex.exec(input)) {
+            split_url = image_url[1].split('\/')
+            pic_name = split_url[split_url.length - 1].split('?')[0]
+            attachment_cid = "attached_image" + image_count + "@outlook.com"
+            //build out the section backwards for convenience sake
+            text_area.after($('<textarea class="smtp_content">').text("MH_ATTACHMENT_" + image_count));
+            text_area.after($('<button class="btn btn-success mr-2 preview_image">').text('Preview Image'));
+            text_area.after($('<button class="btn btn-success mr-2 attach_images">').text('Attach Images'));
+            text_area.after($('<button class="btn btn-success mr-2 pretty_print">').text('Pretty Print'));
+            text_area.after($('<button class="btn btn-success mr-2 qp_decode">').text('Quoted Printable Decode'));
+            text_area.after($('<button class="btn btn-success mr-2 base64_decode">').text('Base64 Decode'));
+            text_area.after($('<br>'))
+            text_area.after($('<input type="text" class="smtp_header">').val("Content-Transfer-Encoding: base64"));
+            text_area.after($('<input type="text" class="smtp_header">').val("Content-ID: <" + attachment_cid + ">"));
+            text_area.after($('<input type="text" class="smtp_header">').val("Content-Type: image/jpeg"));
+            text_area.after($('<input type="text" class="smtp_header smtp_boundary">').val(boundary_line));
+            text_area.after($('<br>'))
+            socket.emit('get_base64_for_image', { "replacement_string": "MH_ATTACHMENT_" + image_count, "image_url": image_url[1] });
+            input = input.replace(image_url[1], "cid:" + attachment_cid)
+            image_count += 1
+          }
+          text_area.val(input)
+        });
+        $(document).on('click', '.pretty_print', function () {
+          input = $(this).nextAll('textarea').first().val()
+          input = input.replace(/></g, '>\r\n<')
+          output = indent.html(input, { tabString: '    ' });
+          output = output.replace(/^\s*[\r\n]/gm, '')
+          $(this).nextAll('textarea').first().val(output)
+          $(".smtp_content").each(function () {
+            this.style.height = (this.scrollHeight) + 10 + 'px';
+          });
+        });
+        function qp2a(str) {
+          var qp_match = /=(..)/g
+          while (match = qp_match.exec(str)) {
+            str = (str.slice(0, match.index) + String.fromCharCode(parseInt(match[1], 16)) + str.slice(match.index + 3))
+          }
+          //str = str.replace(/(\w+)$[\n\r]*/gm,'$1');
+          return str.replace(/=$[\n\r]*/gm, '');
+        }
+        $(document).on('click', '.preview_image', function () {
+          img_src = "data:image/png;base64," + $(this).nextAll('textarea').first().val().replace(/[\r\n]+/g, '')
+          var image = $("<img>", { "src": img_src }).appendTo("#email");
+          image.dialog()
+        });
+        $(document).on('click', '.qp_decode', function () {
+          encoded_content = $(this).nextAll('textarea').first().val()
+          $(this).nextAll('textarea').first().val(qp2a(encoded_content))
+          $(this).prevAll('.smtp_transfer_encoding').first().val('Content-Transfer-Encoding: 8BIT')
+          $(".smtp_content").each(function () {
+            this.style.height = (this.scrollHeight) + 10 + 'px';
+          });
+        });
+        $(document).on('click', '.base64_decode', function () {
+          encoded_content = $(this).nextAll('textarea').first().val()
+          $(this).nextAll('textarea').first().val(atob(encoded_content))
+          $(this).prevAll('.smtp_transfer_encoding').first().val('Content-Transfer-Encoding: 8BIT')
+          $(".smtp_content").each(function () {
+            this.style.height = (this.scrollHeight) + 10 + 'px';
+          });
+        });
+        copy_to_clipboard = function (data) {
+          // Create a dummy input to copy the string inside it
+          var dummy = document.createElement("textarea");
+          // Add it to the document
+          document.body.appendChild(dummy);
+          // Set its ID
+          dummy.setAttribute("id", "dummy_id");
+          // Output the array into it
+          document.getElementById("dummy_id").value = data;
+          // Select it
+          dummy.select();
+          // Copy its contents
+          document.execCommand("copy");
+          // Remove it as its not needed anymore
+          document.body.removeChild(dummy);
+        }
+        function getUrlVars() {
+          var vars = {};
+          var parts = window.location.href.replace(/[?&]+([^=&]+)=([^&]*)/gi, function (m, key, value) {
+            vars[key] = value;
+          });
+          return vars;
+        }
+        $.getJSON("/get_campaign?name=" + getUrlVars()["campaign"], function (data) {
+          $('#email').append($('<textarea class="smtp_content">').text(data.email));
+          $('#supplied_link').val(data.phishing_link)
+          $('#supplied_id_param').val(data.id_parameter)
+          $('#supplied_delay').val(data.delay)
+          $('#supplied_smtp_from').val(data.smtp_from)
+          $('#supplied_mail_server').val(data.mail_server)
+          $('#secure_mail_checkbox').prop('checked', data.secure)
+          $('#dkim_checkbox').prop('checked', data.dkim)
+          $('#supplied_username').val(data.username)
+          $('#supplied_password').val(data.password)
+          $(".smtp_content").each(function () {
+            this.style.height = (this.scrollHeight) + 10 + 'px';
+          });
+        });
+      });
+
+      function downloadEmailImg() {
+        html2canvas(document.querySelector("#emailHTML")).then(canvas => {
+          canvas.toBlob(function (blob) {
+            saveAs(blob, "EmailScreenShot.png");
+          });
+        });
+      }
+    </script>
+  </head>
+
+  <body>
+
+    <div class="modal fade" id="exampleModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel"
+      aria-hidden="true">
+      <div class="modal-dialog modal-xl" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="exampleModalLabel">Preview Email</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div id="emailHTML" class="modal-body">
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            <button type="button" class="btn btn-primary" data-dismiss="modal" onclick="downloadEmailImg()"><i
+                class="fas fa-download"></i> Download Screenshot</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <nav class="custom-nav">
+      <div class="form-inline" role="group">
+        <a href="/admin" class="btn btn-primary mr-5"><i class="fas fa-arrow-left"></i> Back to Campaigns</a>
+        <button type="button" class="btn btn-danger mr-2" id="delete_campaign"><i class="far fa-trash-alt"></i> Delete
+          Campaign</button>
+        <button type="button" class="btn btn-primary mr-2" id="update_campaign"><i class="far fa-save"></i> Save
+          Changes</button>
+        <button type="button" onclick="reloadPreview()" class="btn btn-primary" data-toggle="modal"
+          data-target="#exampleModal">
+          <i class="far fa-eye"></i> Preview Email
+        </button>
+      </div>
+    </nav>
+
+    <div class="container mb-5">
+      <div class="row">
+        <div class="col">
+          <form class="form-inline">
+            <label class="form-label mr-2" for="find_string">Find:</label>
+            <input type="text" class="form-control mr-2" id="find_string" name="find_string">
+            <label class="form-label mr-2" for="find_string">Replace:</label>
+            <input type="text" class="form-control mr-2" id="replace_string" name="replace_string">
+            <button type="button" id="find_and_replace" class="btn btn-primary"><i class="fas fa-search"></i> Find &
+              Replace</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="container-fluid">
+      <div class="row">
+        <div class="col-8">
+          <textarea id="workspace" hidden></textarea>
+          <div id="email">
+          </div>
+        </div>
+        <div class="col-4">
+          <div id="control_panel">
+
+            <form>
+              <div class="form-group row">
+                <label for="supplied_link" class="col-sm-4">SuppliedPhishingLink</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control panel_input" id="supplied_link">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_id_param" class="col-sm-4">ID Parameter Name (default = id)</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_id_param">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_delay" class="col-sm-4">Delay Between Emails</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_delay">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_first_name" class="col-sm-4">SuppliedFirstName</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_first_name">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_last_name" class="col-sm-4">SuppliedLastName</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_last_name">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_position" class="col-sm-4">SuppliedPosition</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_position">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_custom_replacement" class="col-sm-5">SuppliedCustomReplacement</label>
+                <div class="col-sm-7">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_custom_replacement">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_smtp_from" class="col-sm-4">SMTP From</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_smtp_from">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_mail_to" class="col-sm-4">Mail To</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_mail_to">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_mail_server" class="col-sm-4">Mail Server</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_mail_server">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="secure_mail_checkbox" class="col-sm-4">Secure Mail</label>
+                <div class="col-sm-8">
+                  <input id="secure_mail_checkbox" type="checkbox"></input>
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="dkim_checkbox" class="col-sm-4">DKIM</label>
+                <div class="col-sm-8">
+                  <input id="dkim_checkbox" type="checkbox"></input>
+                </div>
+              </div <hr />
+              <div class="form-group row">
+                <label for="supplied_username" class="col-sm-4">User Name</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_username">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_password" class="col-sm-4">Password</label>
+                <div class="col-sm-8">
+                  <input type="password" class="form-control col-sm-8 panel_input" id="supplied_password">
+                </div>
+              </div>
+              <hr />
+              <button id="copy_email" class="btn btn-primary">Copy Email</button>
+              <button id="send_test" class="btn btn-primary">Send Test</button>
+              <button id="clear_smtp_commands" class="btn btn-primary">Clear SMTP History</button>
+
+            </form>
+
+            <div id="smtp_history_label">SMTP History:</div>
+            <ul id="smtp_commands"></ul>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </body>
+
+</html>

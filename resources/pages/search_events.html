@@ -1,0 +1,185 @@
+<!doctype html>
+<html>
+
+<body>
+
+  <head>
+    <title>Phishmonger</title>
+    <link rel="shortcut icon" href="favicon.ico">
+    <link rel="stylesheet" href="/static/css/searchEvents.css">
+    <link rel="stylesheet" href="/static/css/bootstrap.min.css"></script>
+    <script src="/static/js/jquery-1.11.1.js"></script>
+    <script src="/static/js/jquery-ui.min.js"></script>
+    <script src="/static/js/popper.min.js"></script>
+    <script src="/static/js/bootstrap.min.js"></script>
+    <script src="/static/js/2d526206ed.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      $(function () {
+        var socket = io();
+
+        socket.on('server_message', function (msg) {
+          alert(msg)
+        });
+
+        $(document).on('keyup', '.search_field', function () {
+          event_type = $("#event_search").val()
+          timestamp = $("#time_search").val()
+          source = $("#source_search").val()
+          target = $("#target_search").val()
+          event_data = $("#data_search").val()
+          $(".search_result").remove()
+          $.getJSON("/get_search_events?campaign=" + campaign + "&timestamp=" + timestamp + "&event_type=" + event_type + "&source=" + source + "&target=" + target + "&data=" + event_data, function (data) {
+            $.each(data, function (key, val) {
+              showEvent(val)
+            });
+          });
+        })
+
+        $(document).on('click', '.ignore_button', function () {
+          let row = $(this).parent().parent()
+          ignoreEvent(row)
+        })
+
+        function ignoreEvent(row) {
+          let row_cells = row.children()
+          let timestamp = $(row_cells[0]).text()
+          let source = $(row_cells[1]).text()
+          let target = $(row_cells[2]).text()
+          let event_type = $(row_cells[3]).text()
+          let data = $(row_cells[4]).text()
+          let myevent = {
+            "campaign": campaign,
+            "timestamp": timestamp,
+            "source": source,
+            "target": target,
+            "event_type": event_type,
+            "data": data
+          }
+          $.ajax(
+            "/ignore_event",
+            {
+              data: JSON.stringify(myevent),
+              contentType : 'application/json',
+              type : 'PUT'
+            }
+          ).done(function( data ) {
+            console.log(data)
+          })
+          $(row).remove()
+        }
+
+        function showEvent(new_event) {
+          $("#events").append(` \
+            <tr class="search_result">\
+              <td>${new_event.event_timestamp}</td>\
+	            <td><a href="https://www.infobyip.com/ip-${new_event.event_ip}.html" target="_blank">${new_event.event_ip}</a></td>\
+	            <td><a href="/view_target?target_id=${new_event.target}">${new_event.target}</a></td>\
+              <td>${new_event.event_type}</td>\
+              <td class="data_cell">${new_event.event_data}</td>\
+              <td class="button_cell"><button class="btn btn-primary ignore_button">Ignore This Event</button></td>\
+            </tr>\
+          `);
+        }
+
+        $(document).on('click', '#back_to_campaign', function () {
+          document.location = '/track_campaign?campaign=' + campaign
+        });
+
+        $(document).on('click', '#ignore_all', function () {
+          $(".search_result").each(function () {
+            ignoreEvent($(this))
+          })
+        });
+
+        $(document).on('click', '#unignore', function () {
+          $.ajax(
+            "/unignore_events",
+            {
+              data: JSON.stringify({campaign: campaign}),
+              contentType : 'application/json',
+              type : 'PUT'
+            }
+          ).done(function( data ) {
+            console.log(data)
+          })
+          setTimeout(function () { location.reload(); }, 1000);
+        });
+
+        function getUrlVars() {
+          var vars = {};
+          var parts = window.location.href.replace(/[?&]+([^=&]+)=([^&]*)/gi, function (m, key, value) {
+            vars[key] = value;
+          });
+          return vars;
+        }
+
+        var campaign = decodeURI(getUrlVars().campaign)
+        var event_type = decodeURI(getUrlVars().event_type)
+        if (event_type == 'undefined') { event_type = '' }
+        $("#event_search").val(event_type)
+        var timestamp = decodeURI(getUrlVars().timestamp)
+        if (timestamp == 'undefined') { timestamp = '' }
+        $("#time_search").val(timestamp)
+        var source = decodeURI(getUrlVars().source)
+        if (source == 'undefined') { source = '' }
+        $("#source_search").val(source)
+        var target = decodeURI(getUrlVars().target)
+        if (target == 'undefined') { target = '' }
+        $("#target_search").val(target)
+        var event_data = decodeURI(getUrlVars().data)
+        if (event_data == 'undefined') { event_data = '' }
+        $("#data_search").val(event_data)
+        var unique_only = decodeURI(getUrlVars().unique)
+
+        $.getJSON("/get_search_events?campaign=" + campaign + "&timestamp=" + timestamp + "&event_type=" + event_type + "&source=" + source + "&target=" + target + "&data=" + event_data, function (data) {
+          let target_list = []
+          $.each(data, function (key, val) {
+            if (unique_only == "true") {
+              if (target_list.includes(val.target)) {
+                return true
+              } else {
+                target_list.push(val.target)
+              }
+            }
+            showEvent(val)
+          });
+        });
+
+      });
+    </script>
+  </head>
+
+  <body>
+
+    <nav class="custom-nav">
+      <div class="form-inline" role="group">
+        <button id="back_to_campaign" class="btn btn-primary mr-5"><i class="fas fa-arrow-left"></i> Back to
+          Campaign</button>
+        <button id="unignore" class="btn btn-primary"><i class="fas fa-undo"></i> Reverse (show) All Ignored
+          Events</button>
+      </div>
+    </nav>
+
+    <table class="table" id="events">
+      <tr>
+        <td><input class="form-control search_field" id="time_search" type="text" style="width:100%"></input></td>
+        <td><input class="form-control search_field" id="source_search" type="text" style="width:100%"></input></td>
+        <td><input class="form-control search_field" id="target_search" type="text" style="width:100%"></input></td>
+        <td><input class="form-control search_field" id="event_search" type="text" style="width:100%"></input></td>
+        <td class="data_cell"><input class="form-control search_field" id="data_search" type="text"
+            style="width:100%"></input></td>
+        <td class="button_cell"><button class="btn btn-primary" id="ignore_all">Ignore All</button></td>
+      </tr>
+      <tr>
+        <th>TimeStamp</th>
+        <th>Source IP</th>
+        <th>Target</th>
+        <th>Event</th>
+        <th class="data_cell">Data</th>
+        <th class="button_cell"></th>
+      </tr>
+    </table>
+  </body>
+
+</html>

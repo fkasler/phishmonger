@@ -1,0 +1,41 @@
+$themeGray: #f9f7f7;
+$themeSoft: #dbe2ef;
+$themeMain: #3f72af;
+$themeDark: #112d4e;
+
+@import url('https://fonts.googleapis.com/css?family=Roboto+Mono&display=swap');
+
+.custom-nav {
+  width: 100%;
+  height: auto;
+  padding: 10px;
+  background-color: $themeDark;
+  margin-bottom: 20px;
+  color: white;
+}
+
+// overrides while I'm using the CDN
+.btn-primary {
+  background-color: $themeMain !important;
+  border-color: $themeMain !important;
+  color: white !important;
+}
+
+.btn-group,
+form {
+  .btn-primary:hover {
+    background-color: $themeDark !important;
+  }
+}
+
+a {
+  color: $themeMain !important;
+}
+
+.table {
+  color: $themeDark !important;
+}
+
+textarea {
+  font-family: 'Roboto Mono' !important;
+}

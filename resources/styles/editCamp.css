@@ -1,0 +1,27 @@
+form {
+  display: inline;
+}
+
+.custom-nav {
+  width: 100%;
+  height: auto;
+  padding: 10px;
+  background-color: #112d4e;
+  margin-bottom: 50px;
+  color: white;
+}
+
+.btn-primary {
+  background-color: #3f72af !important;
+  border-color: #3f72af !important;
+  color: white !important;
+}
+
+a {
+  color: #3f72af !important;
+}
+
+.table {
+  color: #112d4e !important;
+}
+/*# sourceMappingURL=editCamp.css.map */

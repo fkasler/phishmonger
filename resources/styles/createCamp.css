@@ -1,0 +1,33 @@
+@import url("https://fonts.googleapis.com/css?family=Roboto+Mono&display=swap");
+.custom-nav {
+  width: 100%;
+  height: auto;
+  padding: 10px;
+  background-color: #112d4e;
+  margin-bottom: 20px;
+  color: white;
+}
+
+.btn-primary {
+  background-color: #3f72af !important;
+  border-color: #3f72af !important;
+  color: white !important;
+}
+
+.btn-group .btn-primary:hover,
+form .btn-primary:hover {
+  background-color: #112d4e !important;
+}
+
+a {
+  color: #3f72af !important;
+}
+
+.table {
+  color: #112d4e !important;
+}
+
+textarea {
+  font-family: 'Roboto Mono' !important;
+}
+/*# sourceMappingURL=createCamp.css.map */

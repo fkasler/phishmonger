@@ -1,0 +1,828 @@
+<!doctype html>
+<html>
+
+<body>
+
+  <head>
+    <title>Phishmonger</title>
+    <link rel="shortcut icon" href="favicon.ico">
+    <link rel="stylesheet" href="/static/css/createCamp.css">
+    <link rel="stylesheet" href="/static/css/bootstrap.min.css">
+    <script src="/static/js/jquery-3.4.1.slim.min.js"></script>
+    <script src="/static/js/popper.min.js"></script>
+    <script src="/static/js/bootstrap.min.js"></script>
+    <script src="/static/js/2d526206ed.js"></script>
+    <script src="/static/js/html2canvas.min.js"></script>
+    <script src="/static/js/FileSaver.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/static/js/jquery.min.js"></script>
+    <script src="/static/js/jquery-ui.min.js"></script>
+    <script type="text/javascript" src="/static/js/indent.js"></script>
+
+    <style>
+      .smtp_content {
+        width: 100%;
+        border-radius: 5px;
+        padding: 5px;
+      }
+
+      .smtp_header {
+        width: 100%;
+        border-radius: 5px;
+        padding: 5px;
+      }
+    </style>
+
+    <script>
+
+      function reloadPreview() {
+
+        let test_mail = ''
+
+        $("#email").children(".smtp_header, .smtp_content").each(function () {
+          if ($(this).attr("class").match(/smtp_content/)) {
+            test_mail += '\n' + $(this).val() + '\n\n'
+          }
+          else {
+            test_mail += $(this).val() + '\n'
+          }
+        });
+
+        let emailHTML = test_mail.substring(
+          test_mail.search('<html.*>'),
+          test_mail.search('</html.*>') + 7
+        )
+        emailHTML = emailHTML.replace(/SuppliedPhishingLink/g,$('#supplied_link').val())
+        let modalContent = document.getElementById("emailHTML");
+        modalContent.innerHTML = emailHTML;
+
+        let imageNodes = modalContent.getElementsByTagName("img");
+        let images = Array.from(imageNodes);
+        images.forEach(image => {
+          let imageSrc = image.src.split(":")[1]
+
+          let cidRaw = test_mail.substring(
+            test_mail.lastIndexOf(imageSrc),
+            test_mail.indexOf("--", test_mail.lastIndexOf(imageSrc))
+          )
+
+          let cid = cidRaw.substring(
+            cidRaw.indexOf("\n\n"),
+            cidRaw.lastIndexOf("\n")
+          )
+          image.src = "data:image/png;base64," + cid
+        });
+      }
+
+      $(function () {
+        captured_mail = ''
+        var socket = io();
+        socket.on('server_message', function (msg) {
+          alert(msg)
+        })
+        socket.on('capture_started', function (msg) {
+          $("#capture_email").attr("disabled", true);
+          $("#email").empty()
+          captured_mail = ''
+          $("#workspace").val('')
+        })
+        socket.on('capture_complete', function (msg) {
+          $("#capture_email").removeAttr("disabled");
+          $("#workspace").val(captured_mail)
+          parseEmail($("#workspace").val())
+        })
+        socket.on('email_content', function (stream) {
+          var enc = new TextDecoder("utf-8");
+          captured_mail += enc.decode(stream)
+          //console.log(stream)
+        })
+        socket.on('smtp_command', function (smtp) {
+          if (smtp.campaign == 'test') {
+            $('#smtp_commands').append($('<li type="text" class="smtp_command">').text(smtp.data));
+          }
+        })
+        $('body').on("click", "#screencap", function () {
+          zoom = $("#screencap")[0].getAttribute('zoom')
+          height = $("#screencap")[0].height
+          width = $("#screencap")[0].width
+          if (zoom == "false") {
+            $("#screencap")[0].setAttribute('height', height * 5)
+            $("#screencap")[0].setAttribute('width', width * 5)
+            $('#screencap')[0].setAttribute('zoom', 'true');
+          } else {
+            $("#screencap")[0].setAttribute('height', height / 5)
+            $("#screencap")[0].setAttribute('width', width / 5)
+            $('#screencap')[0].setAttribute('zoom', 'false');
+          }
+        });
+        $("#capture_email").click(function () {
+          socket.emit('capture_email', {});
+        });
+        $("#clear_smtp_commands").click(function () {
+          event.preventDefault()
+          $("#smtp_commands").empty()
+        });
+        $("#reset_email").click(function () {
+          $("#email").empty()
+          raw_text = $("#workspace").val()
+          parseEmail(raw_text)
+        });
+        $("#secure_mail_checkbox").click(function () {
+          document.cookie = 'secure_mail_checkbox=' + $("#secure_mail_checkbox").prop('checked');
+        });
+        $("#dkim_checkbox").click(function () {
+          document.cookie = 'dkim_checkbox=' + $("#dkim_checkbox").prop('checked');
+        });
+        $("#find_and_replace").click(function () {
+          $("#email").children(".smtp_header, .smtp_content").each(function () {
+            find_regex = new RegExp($("#find_string").val(), 'g')
+            replacement = $(this).val().replace(find_regex, $("#replace_string").val())
+            $(this).val(replacement)
+          });
+        });
+        $("#copy_email").click(function () {
+          event.preventDefault()
+          var test_mail = ''
+          $("#email").children(".smtp_header, .smtp_content").each(function () {
+            if ($(this).attr("class").match(/smtp_content/)) {
+              test_mail += '\n' + $(this).val() + '\n\n'
+            } else {
+              test_mail += $(this).val() + '\n'
+            }
+          });
+          copy_to_clipboard(test_mail)
+        });
+        $("#save_template").click(function () {
+          var test_mail = ''
+          $("#email").children(".smtp_header, .smtp_content").each(function () {
+            if ($(this).attr("class").match(/smtp_content/)) {
+              test_mail += '\n' + $(this).val() + '\n\n'
+            } else {
+              test_mail += $(this).val() + '\n'
+            }
+          });
+          mail_object = { "mail_data": test_mail }
+          template_name = getUrlVars()["template"]
+          if ((typeof template_name) == 'undefined') {
+            template_name = prompt("Please enter a name for this scenario", "");
+          }
+          if ((template_name == null) || (template_name == "")) { return; }
+          mail_object.template_name = template_name
+          console.log(mail_object)
+          $.ajax(
+            "/save_template", 
+            {
+              data: JSON.stringify(mail_object),
+              contentType : 'application/json',
+              type : 'POST'
+            } 
+          ).done(function( data ) {
+            alert(data)
+          })
+        });
+        $("#delete_template").click(function () {
+          safety_check = prompt("WARNING: You are about to delete this template and any trace it ever existed.\nIf you are sure this is what you would like to do, type the following:\n\"Press the red button!\"")
+          if (safety_check == "Press the red button!") {
+            scenario_name = getUrlVars()["template"]
+            if ((scenario_name == null) || (scenario_name == "")) { return; }
+            let template = {template_name: decodeURI(scenario_name).replace(/\+/g, ' ')}
+            $.ajax(
+              "/delete_template", 
+              {
+                data: JSON.stringify(template),
+                contentType : 'application/json',
+                type : 'DELETE'
+              } 
+            ).done(function( data ) {
+              alert(data)
+            })
+          }
+        })
+        $("#send_test").click(function () {
+          event.preventDefault()
+          var test_mail = ''
+          $("#email").children(".smtp_header, .smtp_content").each(function () {
+            if ($(this).attr("class").match(/smtp_content/)) {
+              test_mail += '\n' + $(this).val() + '\n\n'
+            } else {
+              test_mail += $(this).val() + '\n'
+            }
+          });
+          mail_object = { "mail_data": test_mail }
+          $(".panel_input").each(function () {
+            mail_object[$(this).attr('id')] = $(this).val()
+          })
+          mail_object["secure_mail"] = $("#secure_mail_checkbox").prop('checked')
+          mail_object["dkim"] = $("#dkim_checkbox").prop('checked')
+          mail_object["campaign"] = 'test'
+          mail_object["target_id"] = 'test'
+          $.ajax(
+            "/send_test_email", 
+            {
+              data: JSON.stringify(mail_object),
+              contentType : 'application/json',
+              type : 'POST'
+            } 
+          ).done(function( data ) {
+            console.log(data)
+          })
+        })
+        $(".panel_input").focusout(function () {
+          $(".panel_input").each(function () {
+            document.cookie = $(this).attr('id') + '=' + $(this).val()
+          });
+          $($('.from_field')[0]).val('From: "' + $('#supplied_from_title').val() + '" <' + $('#supplied_from_address').val() + '>')
+        });
+        $(document).on('click', '.attach_images', function () {
+          text_area = $(this).nextAll('textarea').first()
+          input = text_area.val()
+          boundary_line = $(this).prevAll('.smtp_boundary').first().val()
+          image_regex = /src=['"](http[^'"]+)['"]/ig
+          image_count = 0
+          while (image_url = image_regex.exec(input)) {
+            let single_url = image_url[1]
+            if((typeof single_url) == 'string'){
+              let split_url = single_url.split('\/')
+              let pic_name = split_url[split_url.length - 1].split('?')[0]
+              let attachment_cid = "attached_image" + image_count + "@outlook.com"
+              $.ajax(
+                "/get_base64_for_image", 
+                {
+                  data: JSON.stringify({"image_url": single_url}),
+                  contentType : 'application/json',
+                  type : 'POST'
+                } 
+              ).done(function( b64_image ) {
+                //build out the section backwards for convenience sake
+                text_area.after($('<textarea class="smtp_content">').text(b64_image.match(/.{1,76}/g).join('\n')));
+                text_area.after($('<button class="btn btn-success mr-2 preview_image">').text('Preview Image'));
+                text_area.after($('<br>'))
+                text_area.after($('<input type="text" class="smtp_header">').val("Content-Transfer-Encoding: base64"));
+                text_area.after($('<input type="text" class="smtp_header">').val("Content-ID: <" + attachment_cid + ">"));
+                text_area.after($('<input type="text" class="smtp_header">').val("Content-Type: image/jpeg"));
+                text_area.after($('<input type="text" class="smtp_header smtp_boundary">').val(boundary_line));
+                text_area.after($('<br>'))
+              })
+              input = input.replace(single_url, "cid:" + attachment_cid)
+              image_count += 1
+            }
+          }
+          text_area.val(input)
+        });
+        $(document).on('click', '.pretty_print', function () {
+          input = $(this).nextAll('textarea').first().val()
+          input = input.replace(/></g, '>\r\n<')
+          output = indent.html(input, { tabString: '    ' });
+          output = output.replace(/^\s*[\r\n]/gm, '')
+          $(this).nextAll('textarea').first().val(output)
+          $(".smtp_content").each(function () {
+            this.style.height = (this.scrollHeight) + 10 + 'px';
+          });
+        });
+        function qp2a(str) {
+          var qp_match = /=(..)/g
+          while (match = qp_match.exec(str)) {
+            str = (str.slice(0, match.index) + String.fromCharCode(parseInt(match[1], 16)) + str.slice(match.index + 3))
+          }
+          //str = str.replace(/(\w+)$[\n\r]*/gm,'$1');
+          return str.replace(/=$[\n\r]*/gm, '');
+        }
+        $(document).on('click', '.preview_image', function () {
+          img_src = "data:image/png;base64," + $(this).nextAll('textarea').first().val().replace(/[\r\n]+/g, '')
+          var image = $("<img>", { "src": img_src }).appendTo("#email");
+          image.dialog()
+        });
+        $(document).on('click', '.qp_decode', function () {
+          encoded_content = $(this).nextAll('textarea').first().val()
+          $(this).nextAll('textarea').first().val(qp2a(encoded_content))
+          $(this).prevAll('.smtp_transfer_encoding').first().val('Content-Transfer-Encoding: 8BIT')
+          $(".smtp_content").each(function () {
+            this.style.height = (this.scrollHeight) + 10 + 'px';
+          });
+        });
+        $(document).on('click', '.base64_decode', function () {
+          encoded_content = $(this).nextAll('textarea').first().val()
+          $(this).nextAll('textarea').first().val(decodeURIComponent(escape(atob(encoded_content))))
+          $(this).prevAll('.smtp_transfer_encoding').first().val('Content-Transfer-Encoding: 8BIT')
+          $(".smtp_content").each(function () {
+            this.style.height = (this.scrollHeight) + 10 + 'px';
+          });
+        });
+        $("#rfc_only").click(function () {
+          approved_headers = /^\s*[\r\n]*$|^--|boundary=|^A-IM:|^ALPN:|^Accept:|^Accept-Additions:|^Accept-Charset:|^Accept-Datetime:|^Accept-Encoding:|^Accept-Features:|^Accept-Language:|^Accept-Patch:|^Accept-Post:|^Accept-Ranges:|^Access-Control:|^Access-Control-Allow-Credentials:|^Access-Control-Allow-Headers:|^Access-Control-Allow-Methods:|^Access-Control-Allow-Origin:|^Access-Control-Max-Age:|^Access-Control-Request-Headers:|^Access-Control-Request-Method:|^Age:|^Allow:|^Also-Control:|^Alt-Svc:|^Alt-Used:|^Alternate-Recipient:|^Alternates:|^Apparently-To:|^Apply-To-Redirect-Ref:|^Approved:|^Archive:|^Archived-At:|^Article-Names:|^Article-Updates:|^Authorization:|^Auto-Submitted:|^Autoforwarded:|^Autosubmitted:|^Base:|^Bcc:|^Body:|^C-Ext:|^C-Man:|^C-Opt:|^C-PEP:|^C-PEP-Info:|^Cache-Control:|^CalDAV-Timezones:|^Cancel-Key:|^Cancel-Lock:|^Cc:|^Close:|^Comments:|^Compliance:|^Connection:|^Content-Alternative:|^Content-Base:|^Content-Description:|^Content-Disposition:|^Content-Duration:|^Content-Encoding:|^Content-ID:|^Content-Identifier:|^Content-Language:|^Content-Length:|^Content-Location:|^Content-MD5:|^Content-Range:|^Content-Return:|^Content-Script-Type:|^Content-Style-Type:|^Content-Transfer-Encoding:|^Content-Translation-Type:|^Content-Type:|^Content-Version:|^Content-features:|^Control:|^Conversion:|^Conversion-With-Loss:|^Cookie:|^Cookie2:|^Cost:|^DASL:|^DAV:|^DL-Expansion-History:|^Date:|^Default-Style:|^Deferred-Delivery:|^Delivery-Date:|^Delta-Base:|^Depth:|^Derived-From:|^Destination:|^Differential-ID:|^Digest:|^Discarded-X400-IPMS-Extensions:|^Discarded-X400-MTS-Extensions:|^Disclose-Recipients:|^Disposition-Notification-Options:|^Disposition-Notification-To:|^Distribution:|^Downgraded-Bcc:|^Downgraded-Cc:|^Downgraded-Disposition-Notification-To:|^Downgraded-Final-Recipient:|^Downgraded-From:|^Downgraded-Mail-From:|^Downgraded-Original-Recipient:|^Downgraded-Rcpt-To:|^Downgraded-Reply-To:|^Downgraded-Resent-Bcc:|^Downgraded-Resent-Cc:|^Downgraded-Resent-From:|^Downgraded-Resent-Reply-To:|^Downgraded-Resent-Sender:|^Downgraded-Resent-To:|^Downgraded-Return-Path:|^Downgraded-Sender:|^Downgraded-To:|^EDIINT-Features:|^ETag:|^Eesst-Version:|^Encoding:|^Encrypted:|^Errors-To:|^Expect:|^Expires:|^Expiry-Date:|^Ext:|^Followup-To:|^Form-Sub:|^Forwarded:|^From:|^Generate-Delivery-Report:|^GetProfile:|^HTTP2-Settings:|^Hobareg:|^Host:|^IM:|^If:|^If-Match:|^If-Modified-Since:|^If-None-Match:|^If-Range:|^If-Schedule-Tag-Match:|^If-Unmodified-Since:|^Importance:|^Incomplete-Copy:|^Injection-Date:|^Injection-Info:|^Jabber-ID:|^Keep-Alive:|^Keywords:|^Label:|^Language:|^Last-Modified:|^Latest-Delivery-Time:|^Lines:|^Link:|^List-Archive:|^List-Help:|^List-ID:|^List-Owner:|^List-Post:|^List-Subscribe:|^List-Unsubscribe:|^List-Unsubscribe-Post:|^Location:|^Lock-Token:|^MIME-Version:|^MMHS-Acp127-Message-Identifier:|^MMHS-Authorizing-Users:|^MMHS-Codress-Message-Indicator:|^MMHS-Copy-Precedence:|^MMHS-Exempted-Address:|^MMHS-Extended-Authorisation-Info:|^MMHS-Handling-Instructions:|^MMHS-Message-Instructions:|^MMHS-Message-Type:|^MMHS-Originator-PLAD:|^MMHS-Originator-Reference:|^MMHS-Other-Recipients-Indicator-CC:|^MMHS-Other-Recipients-Indicator-To:|^MMHS-Primary-Precedence:|^MMHS-Subject-Indicator-Codes:|^MT-Priority:|^Man:|^Max-Forwards:|^Memento-Datetime:|^Message-Context:|^Message-Type:|^Meter:|^Method-Check:|^Method-Check-Expires:|^NNTP-Posting-Date:|^NNTP-Posting-Host:|^Negotiate:|^Newsgroups:|^Non-Compliance:|^Obsoletes:|^Opt:|^Optional:|^Optional-WWW-Authenticate:|^Ordering-Type:|^Organization:|^Origin:|^Original-Encoded-Information-Types:|^Original-From:|^Original-Message-ID:|^Original-Recipient:|^Original-Sender:|^Original-Subject:|^Originator-Return-Address:|^Overwrite:|^P3P:|^PEP:|^PICS-Label:|^Path:|^Pep-Info:|^Position:|^Posting-Version:|^Pragma:|^Prefer:|^Preference-Applied:|^Prevent-NonDelivery-Report:|^Priority:|^Privicon:|^ProfileObject:|^Protocol:|^Protocol-Info:|^Protocol-Query:|^Protocol-Request:|^Proxy-Authenticate:|^Proxy-Authentication-Info:|^Proxy-Authorization:|^Proxy-Features:|^Proxy-Instruction:|^Public:|^Public-Key-Pins:|^Public-Key-Pins-Report-Only:|^Range:|^Redirect-Ref:|^Reference:|^Referer:|^Referer-Root:|^Relay-Version:|^Reply-By:|^Reply-To:|^Require-Recipient-Valid-Since:|^Resent-Bcc:|^Resent-Cc:|^Resent-Date:|^Resent-From:|^Resent-Message-ID:|^Resent-Reply-To:|^Resent-Sender:|^Resent-To:|^Resolution-Hint:|^Resolver-Location:|^Retry-After:|^Return-Path:|^SIO-Label:|^SIO-Label-History:|^SLUG:|^Safe:|^Schedule-Reply:|^Schedule-Tag:|^Sec-WebSocket-Accept:|^Sec-WebSocket-Extensions:|^Sec-WebSocket-Key:|^Sec-WebSocket-Protocol:|^Sec-WebSocket-Version:|^Security-Scheme:|^See-Also:|^Sender:|^Sensitivity:|^Server:|^Set-Cookie:|^Set-Cookie2:|^SetProfile:|^SoapAction:|^Solicitation:|^Status-URI:|^Strict-Transport-Security:|^SubOK:|^Subject:|^Subst:|^Summary:|^Supersedes:|^Surrogate-Capability:|^Surrogate-Control:|^TCN:|^TE:|^TTL:|^Timeout:|^Title:|^To:|^Topic:|^Trailer:|^Transfer-Encoding:|^UA-Color:|^UA-Media:|^UA-Pixels:|^UA-Resolution:|^UA-Windowpixels:|^URI:|^Upgrade:|^Urgency:|^User-Agent:|^VBR-Info:|^Variant-Vary:|^Vary:|^Version:|^Via:|^WWW-Authenticate:|^Want-Digest:|^Warning:|^X-Archived-At:|^X-Content-Type-Options:|^X-Device-Accept:|^X-Device-Accept-Charset:|^X-Device-Accept-Encoding:|^X-Device-Accept-Language:|^X-Device-User-Agent:|^X-Frame-Options:|^X-Mittente:|^X-PGP-Sig:|^X-Ricevuta:|^X-Riferimento-Message-ID:|^X-TipoRicevuta:|^X-Trasporto:|^X-VerificaSicurezza:|^X400-Content-Identifier:|^X400-Content-Return:|^X400-Content-Type:|^X400-MTS-Identifier:|^X400-Originator:|^X400-Recipients:|^X400-Trace:|^Xref:/i
+          var predecessor_approved = false
+          $(".smtp_header").each(function () {
+            if (approved_headers.test($(this).val())) {
+              predecessor_approved = true
+            } else if ((predecessor_approved) & (/^\s/.test($(this).val()))) {
+              //do nothing as we are in a "folded" approved header
+            } else {
+              $(this).next('br').remove();
+              $(this).remove()
+              predecessor_approved = false
+            }
+          });
+        });
+        function parseEmail(raw_text) {
+          email_lines = raw_text.split("\n")
+          content = false
+          content_buffer = ''
+          boundary_regex = new RegExp('boundary=(.+$)', 'i')
+          transfer_encoding_regex = new RegExp('Content-Transfer-Encoding', 'i')
+          boundaries = []
+          section_mime_type = ''
+          $(email_lines).each(function (index, line) {
+            //collect content boundries in an array for later checks
+            //if(boundary_regex.test(line) & (!content)){
+            if (boundary_regex.test(line)) {
+              boundaries.push(boundary_regex.exec(line)[1].replace(/["\r\n;]/g, ''))
+            }
+            if ((!content) & (line == '')) {
+              content = true
+            }
+            $(boundaries).each(function (index, boundary) {
+              isBoundary = new RegExp('--' + boundary, 'i')
+              //console.log("testing for:" + boundary)
+              if (isBoundary.test(line)) {
+                content = false
+                if (content_buffer.replace(/[\r\n\s]*/gm, '') == '') {
+                  $('#email').append($('<input type="text" class="smtp_header">'));
+                  $('#email').append($('<br>'))
+                } else {
+                  if (section_mime_type == 'html') {
+                    $('#email').append($('<button class="btn btn-success mr-2 base64_decode">').text('Base64 Decode'));
+                    $('#email').append($('<button class="btn btn-success mr-2 qp_decode">').text('Quoted Printable Decode'));
+                    $('#email').append($('<button class="btn btn-success mr-2 pretty_print">').text('Pretty Print'));
+                    $('#email').append($('<button class="btn btn-success mr-2 attach_images">').text('Attach Images'));
+                    $('#email').append($('<textarea class="smtp_content">').text(content_buffer));
+                    $('#email').append($('<br>'))
+                  } else if (section_mime_type == 'text') {
+                    $('#email').append($('<button class="btn btn-success mr-2 base64_decode">').text('Base64 Decode'));
+                    $('#email').append($('<button class="btn btn-success mr-2 qp_decode">').text('Quoted Printable Decode'));
+                    $('#email').append($('<textarea class="smtp_content">').text(content_buffer));
+                    $('#email').append($('<br>'))
+                  } else if (section_mime_type == 'image') {
+                    $('#email').append($('<button class="btn btn-success mr-2 preview_image">').text('Preview Image'));
+                    $('#email').append($('<textarea class="smtp_content">').text(content_buffer));
+                    $('#email').append($('<br>'))
+                  } else {
+                    $('#email').append($('<button class="btn btn-success mr-2 base64_decode">').text('Base64 Decode'));
+                    $('#email').append($('<button class="btn btn-success mr-2 qp_decode">').text('Quoted Printable Decode'));
+                    $('#email').append($('<button class="btn btn-success mr-2 pretty_print">').text('Pretty Print'));
+                    $('#email').append($('<button class="btn btn-success mr-2 attach_images">').text('Attach Images'));
+                    $('#email').append($('<button class="btn btn-success mr-2 preview_image">').text('Preview Image'));
+                    $('#email').append($('<textarea class="smtp_content">').text(content_buffer));
+                    $('#email').append($('<br>'))
+                  }
+                }
+                content_buffer = ''
+              }
+            });
+            if (content) {
+              content_buffer += line + "\n"
+              //get useful mime types
+            } else if (line.match(/Content-Type:.*text\/plain/i)) {
+              section_mime_type = 'text'
+              $('#email').append($('<input type="text" class="smtp_header">').val(line));
+              $('#email').append($('<br>'))
+            } else if (line.match(/Content-Type:.*text\/html/i)) {
+              section_mime_type = 'html'
+              $('#email').append($('<input type="text" class="smtp_header">').val(line));
+              $('#email').append($('<br>'))
+            } else if (line.match(/Content-Type:.*image/i)) {
+              section_mime_type = 'image'
+              $('#email').append($('<input type="text" class="smtp_header">').val(line));
+              $('#email').append($('<br>'))
+              //tag boundaries
+            } else if (line.match(/^--/)) {
+              $('#email').append($('<input type="text" class="smtp_header smtp_boundary">').val(line));
+              $('#email').append($('<br>'))
+              //tag spectial headers
+            } else if (line.match(/^From:/)) {
+              $('#email').append($('<input type="text" class="smtp_header from_field">').val(line));
+              $('#email').append($('<br>'))
+              try {
+                $("#supplied_from_title").val(line.split('"')[1])
+                $("#supplied_from_address").val(line.split('"')[2].replace(/[\s\n\r<>]*/ig, ''))
+                $("#supplied_smtp_from").val(line.split('"')[2].replace(/[\s\n\r<>]*/ig, ''))
+                //must be encoded or something
+              } catch (err) {
+                console.log(err)
+              }
+            } else if (line.match(/^To:/)) {
+              $('#email').append($('<input type="text" class="smtp_header to_field">').val("To: SuppliedToAddress"));
+              $('#email').append($('<br>'))
+            } else if (line.match(/^Date:/)) {
+              $('#email').append($('<input type="text" class="smtp_header date_time_field">').val("Date: DateTimeStamp"));
+              //$('#email').append($('<input type="text" class="smtp_header date_time_field">').val(line));
+              $('#email').append($('<br>'))
+            } else if (transfer_encoding_regex.test(line)) {
+              $('#email').append($('<input type="text" class="smtp_header smtp_transfer_encoding">').val(line));
+              $('#email').append($('<br>'))
+            } else {
+              $('#email').append($('<input type="text" class="smtp_header">').val(line));
+              $('#email').append($('<br>'))
+            }
+
+          });
+          $(".smtp_content").each(function () {
+            this.style.height = (this.scrollHeight) + 10 + 'px';
+          });
+        }
+        //set options based on the cookie so we don't lose them on refresh
+        cookie_array = document.cookie.split("; ")
+        $(cookie_array).each(function (index, cookie) {
+          try {
+            if (cookie.split('=')[0] == "secure_mail_checkbox") {
+              $("#secure_mail_checkbox").prop('checked', JSON.parse(cookie.split('=')[1]))
+            } else if (cookie.split('=')[0] == "dkim_checkbox") {
+              $("#dkim_checkbox").prop('checked', JSON.parse(cookie.split('=')[1]))
+            } else {
+              $('#' + cookie.split('=')[0]).val(cookie.split('=')[1])
+            }
+          } catch{
+          }
+        });
+        var blobToBase64 = function(blob, callback) {
+            var reader = new FileReader();
+            reader.onload = function() {
+                var dataUrl = reader.result;
+                var base64 = dataUrl.split(',')[1];
+                callback(base64);
+            };
+            reader.readAsDataURL(blob);
+        };
+        copy_to_clipboard = function (data) {
+          // Create a dummy input to copy the string inside it
+          var dummy = document.createElement("textarea");
+          // Add it to the document
+          document.body.appendChild(dummy);
+          // Set its ID
+          dummy.setAttribute("id", "dummy_id");
+          // Output the array into it
+          document.getElementById("dummy_id").value = data;
+          // Select it
+          dummy.select();
+          // Copy its contents
+          document.execCommand("copy");
+          // Remove it as its not needed anymore
+          document.body.removeChild(dummy);
+        }
+        function getUrlVars() {
+          var vars = {};
+          var parts = window.location.href.replace(/[?&]+([^=&]+)=([^&]*)/gi, function (m, key, value) {
+            vars[key] = value;
+          });
+          return vars;
+        }
+        let local_template = getUrlVars()["template"]
+        if(local_template != undefined){
+          $.getJSON("/get_template?name=" + local_template, function (data) {
+            console.log(data)
+            parseEmail(data.email)
+          })
+        }
+        var phishmarket_template = getUrlVars()["phishmarket_template"]
+        if(phishmarket_template != undefined){
+          console.log(phishmarket_template)
+          $.ajax(
+            "/phishmarket/template/" + phishmarket_template,
+            {
+              contentType : 'application/json',
+              type : 'GET'
+            }
+          ).done(function( data ) {
+            console.log(data)
+            parseEmail(data.mime_content)
+          })
+        }
+        $("#save_campaign").click(function () {
+          var test_mail = ''
+          $("#email").children(".smtp_header, .smtp_content").each(function () {
+            if ($(this).attr("class").match(/smtp_content/)) {
+              test_mail += '\n' + $(this).val() + '\n\n'
+            } else {
+              test_mail += $(this).val() + '\n'
+            }
+          });
+          mail_object = { "mail_data": test_mail }
+          mail_object.market_id = 0
+          $(".panel_input").each(function () {
+            mail_object[$(this).attr('id')] = $(this).val()
+          })
+          mail_object["secure_mail"] = $("#secure_mail_checkbox").prop('checked');
+          mail_object["dkim"] = $("#dkim_checkbox").prop('checked');
+          mail_object["market_id"] = (typeof phishmarket_template != 'undefined')?phishmarket_template:0
+          campaign_name = prompt("Please enter a name for this campaign", "");
+          if((campaign_name == null)||(campaign_name == "")){return;}
+       	  mail_object.campaign_name = campaign_name
+          $.ajax(
+            "/save_campaign", 
+            {
+              data: JSON.stringify(mail_object),
+              contentType : 'application/json',
+              type : 'POST'
+            } 
+          ).done(function( data ) {
+            alert(data)
+          })
+        });
+      })
+
+      function downloadEmailImg() {
+        html2canvas(document.querySelector("#emailHTML")).then(canvas => {
+          canvas.toBlob(function (blob) {
+            saveAs(blob, "EmailScreenShot.png")
+          })
+        })
+      }
+
+      function publishTemplate() {
+        html2canvas(document.querySelector("#emailHTML")).then(canvas => {
+          canvas.toBlob(function (blob) {
+            var reader = new window.FileReader();
+            reader.readAsDataURL(blob);
+            reader.onloadend = function () {
+                base64data = reader.result;
+                $("#template_image").val(base64data);
+            }
+          })
+        })
+      }
+
+      function publishToPhishMarket() {
+        let test_mail = ''
+
+        $("#email").children(".smtp_header, .smtp_content").each(function () {
+          if ($(this).attr("class").match(/smtp_content/)) {
+            test_mail += '\n' + $(this).val() + '\n\n'
+          }
+          else {
+            test_mail += $(this).val() + '\n'
+          }
+        });
+
+        let template = {}
+        template.mime_content = test_mail
+        template.title = $("#template_title").val()
+        template.short_description = $("#template_description").val()
+        template.report_description = $("#report_description").val()
+        template.image = $("#template_image").val()
+        $.ajax(
+          "/phishmarket/template/add", 
+          {
+            data: JSON.stringify(template),
+            contentType : 'application/json',
+            type : 'POST'
+          } 
+        ).done(function( data ) {
+          alert(data)
+        })
+      }
+    </script>
+  </head>
+
+  <body>
+
+    <div class="modal fade" id="exampleModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel"
+      aria-hidden="true">
+      <div class="modal-dialog modal-xl" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="exampleModalLabel">Preview Email</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div id="emailHTML" class="modal-body">
+
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            <button type="button" class="btn btn-primary" data-dismiss="modal" data-toggle="modal"
+            data-target="#publishingModal" onclick="publishTemplate()"><i
+              class="fas fa-upload"></i> Publish to Phish Market</button>
+            <button type="button" class="btn btn-primary" data-dismiss="modal" onclick="downloadEmailImg()"><i
+                class="fas fa-download"></i> Download Screenshot</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="publishingModal" tabindex="-1" role="dialog" aria-labelledby="publishingModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog modal-xl" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="publishingModalLabel">Publish Email Template to the Phish Market</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div id="publishingHTML" class="modal-body">
+  
+          <div class="md-form mb-5">
+            <i class="fas fa-envelope prefix grey-text"></i>
+            <input type="email" id="template_title" class="form-control validate">
+            <label data-error="wrong" data-success="right" for="form29">Email Template Name</label>
+          </div>
+  
+          <div class="md-form mb-5">
+            <i class="fas fa-tag prefix grey-text"></i>
+            <input type="text" id="template_description" class="form-control validate">
+            <label data-error="wrong" data-success="right" for="form32">Short Description</label>
+          </div>
+  
+          <div class="md-form">
+            <i class="fas fa-pencil prefix grey-text"></i>
+            <textarea type="text" id="report_description" class="md-textarea form-control" rows="4"></textarea>
+            <label data-error="wrong" data-success="right" for="form8">Report Description</label>
+          </div>
+          <input type="hidden" name="image" value="" id="template_image"></input>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+          <button type="button" class="btn btn-primary" data-dismiss="modal" onclick="publishToPhishMarket()"><i
+            class="fas fa-upload"></i> Publish!</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+    <nav class="custom-nav">
+      <div class="form-inline" role="group">
+        <a href="/admin" class="btn btn-primary mr-5"><i class="fas fa-arrow-left"></i> Back to Campaigns</a>
+        <button type="button" id="capture_email" class="btn btn-primary mr-2"><i class="far fa-envelope"></i> Capture
+          Email</button>
+        <button type="button" id="reset_email" class="btn btn-primary mr-2"><i class="fas fa-undo"></i> Reset Captured
+          Email</button>
+        <button type="button" id="rfc_only" class="btn btn-primary mr-2">RFC Only Headers</button>
+        <button type="button" id="save_template" class="btn btn-primary mr-2"><i class="far fa-save"></i> Save/Update
+          Template</button>
+        <button type="button" id="delete_template" class="btn btn-danger mr-2"><i class="far fa-trash-alt"></i> Delete
+          Template</button>
+        <button type="button" onclick="reloadPreview()" class="btn btn-primary mr-2" data-toggle="modal"
+          data-target="#exampleModal">
+          <i class="far fa-eye"></i> Preview/Publish
+        </button>
+        <button type="button" id="save_campaign" class="btn btn-primary"><i class="far fa-save"></i> Save as
+          Campaign</button>
+      </div>
+    </nav>
+
+    <div class="container mb-5">
+      <div class="row">
+        <div class="col">
+          <form class="form-inline">
+            <label class="form-label mr-2" for="find_string">Find:</label>
+            <input type="text" class="form-control mr-2" id="find_string" name="find_string">
+            <label class="form-label mr-2" for="find_string">Replace:</label>
+            <input type="text" class="form-control mr-2" id="replace_string" name="replace_string">
+            <button type="button" id="find_and_replace" class="btn btn-primary"><i class="fas fa-search"></i> Find &
+              Replace</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="container-fluid">
+      <div class="row">
+        <div class="col-8">
+          <textarea id="workspace" hidden></textarea>
+          <div id="email">
+          </div>
+        </div>
+        <div class="col-4">
+
+          <div id="control_panel">
+
+            <form>
+              <div class="form-group row">
+                <label for="supplied_link" class="col-sm-4">SuppliedPhishingLink</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control panel_input" id="supplied_link">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_id_param" class="col-sm-4">ID Parameter Name (default = id)</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_id_param">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_delay" class="col-sm-4">Delay Between Emails</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_delay">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_first_name" class="col-sm-4">SuppliedFirstName</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_first_name">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_last_name" class="col-sm-4">SuppliedLastName</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_last_name">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_position" class="col-sm-4">SuppliedPosition</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_position">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_custom_replacement" class="col-sm-5">SuppliedCustomReplacement</label>
+                <div class="col-sm-7">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_custom_replacement">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_from_title" class="col-sm-4">From Title</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_from_title">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_from_address" class="col-sm-4">From Address</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_from_address">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_smtp_from" class="col-sm-4">SMTP From</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_smtp_from">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_mail_to" class="col-sm-4">Mail To</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_mail_to">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_mail_server" class="col-sm-4">Mail Server</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_mail_server">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="secure_mail_checkbox" class="col-sm-4">Secure Mail</label>
+                <div class="col-sm-8">
+                  <input id="secure_mail_checkbox" type="checkbox"></input>
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="dkim_checkbox" class="col-sm-4">DKIM</label>
+                <div class="col-sm-8">
+                  <input id="dkim_checkbox" type="checkbox"></input>
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_username" class="col-sm-4">User Name</label>
+                <div class="col-sm-8">
+                  <input type="text" class="form-control col-sm-8 panel_input" id="supplied_username">
+                </div>
+              </div>
+              <hr />
+              <div class="form-group row">
+                <label for="supplied_password" class="col-sm-4">Password</label>
+                <div class="col-sm-8">
+                  <input type="password" class="form-control col-sm-8 panel_input" id="supplied_password">
+                </div>
+              </div>
+              <hr />
+              <button id="copy_email" class="btn btn-primary">Copy Email</button>
+              <button id="send_test" class="btn btn-primary">Send Test</button>
+              <button id="clear_smtp_commands" class="btn btn-primary">Clear SMTP History</button>
+
+            </form>
+
+            <div id="smtp_history_label">SMTP History:</div>
+            <ul id="smtp_commands"></ul>
+            </ul>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </body>
+
+</html>

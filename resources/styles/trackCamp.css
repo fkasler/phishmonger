@@ -1,0 +1,53 @@
+.custom-nav {
+  width: 100%;
+  height: auto;
+  padding: 10px;
+  background-color: #112d4e;
+  margin-bottom: 20px;
+  color: white;
+}
+
+.data-cell {
+  max-width: 600px;
+  overflow: scroll;
+}
+
+canvas {
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+}
+
+.chart-container {
+  display: -webkit-box;
+  display: -ms-flexbox;
+  display: flex;
+  -webkit-box-orient: horizontal;
+  -webkit-box-direction: normal;
+      -ms-flex-direction: row;
+          flex-direction: row;
+  -ms-flex-wrap: wrap;
+      flex-wrap: wrap;
+  -webkit-box-pack: center;
+      -ms-flex-pack: center;
+          justify-content: center;
+}
+
+.btn-primary {
+  background-color: #3f72af !important;
+  border-color: #3f72af !important;
+  color: white !important;
+}
+
+.btn-group .btn-primary:hover {
+  background-color: #112d4e !important;
+}
+
+a {
+  color: #3f72af !important;
+}
+
+.table {
+  color: #112d4e !important;
+}
+/*# sourceMappingURL=trackCamp.css.map */

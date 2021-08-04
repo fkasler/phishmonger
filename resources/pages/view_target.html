@@ -1,0 +1,103 @@
+<!doctype html>
+<html>
+
+<body>
+
+  <head>
+    <title>Phishmonger</title>
+    <link rel="shortcut icon" href="favicon.ico">
+    <link rel="stylesheet" href="/static/css/viewTarget.css">
+    <link rel="stylesheet" href="/static/css/bootstrap.min.css">
+    <script src="/static/js/jquery-3.4.1.slim.min.js"></script>
+    <script src="/static/js/popper.min.js"></script>
+    <script src="/static/js/bootstrap.min.js"></script>
+    <script src="/static/js/2d526206ed.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/static/js/jquery-1.11.1.js"></script>
+    <script src="/static/js/jquery-ui.min.js"></script>
+    <style>
+      ul {
+        overflow-wrap: break-word;
+        list-style: none;
+      }
+
+      li {
+        margin-bottom: 10px;
+      }
+    </style>
+    <script>
+      $(function () {
+        var socket = io();
+
+        socket.on('new_event', function (new_event) {
+          if (new_event.target == target) {
+            showEvent(new_event)
+          }
+        });
+
+        socket.on('server_message', function (msg) {
+          alert(msg)
+        });
+
+        function showTarget(target) {
+          $("#target_info").append(` \
+            <li>Target ID: ${target.target_id}</li>\
+	          <li>Campaign: <a href="/track_campaign?campaign=${target.campaign}">${target.campaign}</a></li>\
+            <li>Email: ${target.address}</li>\
+            <li>First Name: ${target.first_name}</li>\
+            <li>Last Name: ${target.last_name}</li>\
+            <li>Position: ${target.position}</li>\
+            <li>Custom: ${target.custom}</li>\
+          `);
+        }
+
+        function showEvent(new_event) {
+          let human_timestamp = new Date(new_event.event_timestamp).toLocaleString()
+          $("#events").append(` \
+            <li></li>\
+            <li>${new_event.event_ip}: ${new_event.event_type}: ${human_timestamp}</li>\
+            <li>${new_event.event_data}</li>\
+          `);
+        }
+
+        function getUrlVars() {
+          var vars = {};
+          var parts = window.location.href.replace(/[?&]+([^=&]+)=([^&]*)/gi, function (m, key, value) {
+            vars[key] = value;
+          });
+          return vars;
+        }
+
+        var target = decodeURI(getUrlVars().target_id)
+
+        $.getJSON("/get_target_info?target_id=" + target, function (data) {
+          showTarget(data)
+        })
+
+        $.getJSON("/get_target_events?target_id=" + target, function (data) {
+          $.each(data, function (key, val) {
+            showEvent(val)
+          });
+        });
+
+        socket.emit('get_server_datetime');
+
+      });
+    </script>
+  </head>
+
+  <body>
+    <nav class="custom-nav">
+      <div class="form-inline" role="group">
+        <button onclick="history.back()" class="btn btn-primary mr-5"><i class="fas fa-arrow-left"></i> Back to
+          Campaign</button>
+      </div>
+    </nav>
+
+    <ul id="target_info">
+    </ul>
+    <ul id="events">
+    </ul>
+  </body>
+
+</html>

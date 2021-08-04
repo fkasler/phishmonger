@@ -1,0 +1,202 @@
+<!doctype html>
+<html>
+<body>
+
+  <head>
+    <title>Phishmonger</title>
+    <link rel="shortcut icon" href="favicon.ico">
+    <link rel="stylesheet" href="/static/css/trackCamp.css">
+    <link rel="stylesheet" href="/static/css/bootstrap.min.css">
+    <script src="/static/js/jquery-3.4.1.slim.min.js"></script>
+    <script src="/static/js/popper.min.js"></script>
+    <script src="/static/js/bootstrap.min.js"></script>
+    <script src="/static/js/2d526206ed.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/static/js/Graph.min.js"></script>
+    <script src="/static/js/d3.v2.min.js"></script>
+    <script src="/static/js/timeknots.min.js"></script>
+    <script src="/static/js/jquery-1.11.1.js"></script>
+    <script>
+      $(function () {
+        var socket = io();
+
+        socket.on('server_message', function (msg) {
+          alert(msg)
+        })
+
+        function showTarget(target) {
+          let checked = (target.phished == 1) ? "checked" : ""
+          $("#targets").append(` \
+            <tr id="${target.address}">\
+              <td>${target.address}</td>\
+              <td>${target.first_name}</td>\
+              <td>${target.last_name}</td>\
+              <td>${target.position}</td>\
+              <td>${target.custom}</td>\
+	            <td><input type="checkbox" class="phished" ${checked}></input></td>\
+              <td><button class="btn btn-danger delete_target"><i class="far fa-trash-alt"></i> Delete Target</button></td>\
+            </tr>\
+          `)
+        }
+
+        $(document).on('click', '.phished', function () {
+          let target_address = $(this).parent().parent()[0].id
+          let phished = this.checked ? 1 : 0
+          let target = { "address": target_address, "campaign": campaign, "phished": phished }
+          $.ajax(
+            "/update_phished_status",
+            {
+              data: JSON.stringify(target),
+              contentType : 'application/json',
+              type : 'PUT'
+            }
+          ).done(function( data ) {
+            console.log(data)
+          })
+        })
+
+        $(document).on('click', '.delete_target', function () {
+          let target_address = $(this).parent().parent()[0].id
+          let old_target = { "address": target_address, "campaign": campaign }
+          $.ajax(
+            "/delete_target",
+            {
+              data: JSON.stringify(old_target),
+              contentType : 'application/json',
+              type : 'DELETE'
+            }
+          ).done(function( data ) {
+            $("#" + data.replace(/(:|\.|\[|\]|,|=|@)/g, "\\$1")).remove()
+          })
+        })
+
+        $(document).on('click', '#back_to_campaign', function () {
+          document.location = '/track_campaign?campaign=' + campaign
+        });
+
+        $(document).on('click', '#manual_add_target', function () {
+          let new_email = $("#add_email").val()
+          $("#add_email").val('')
+          let new_first_name = $("#add_first_name").val()
+          $("#add_first_name").val('')
+          let new_last_name = $("#add_last_name").val()
+          $("#add_last_name").val('')
+          let new_position = $("#add_position").val()
+          $("#add_position").val('')
+          let new_custom = $("#add_custom").val()
+          $("#add_custom").val('')
+          if (/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/.test(new_email)) {
+            let new_target = { 
+              "address": new_email,
+              "campaign": campaign,
+              "first_name": new_first_name,
+              "last_name": new_last_name,
+              "position": new_position,
+              "custom": new_custom,
+              "phished": 0
+            }
+            $.ajax(
+              "/create_target", 
+              {
+                data: JSON.stringify(new_target),
+                contentType : 'application/json',
+                type : 'POST'
+              }
+            ).done(function( data ) {
+              showTarget(data)
+            })
+          } else {
+            alert("Not a valid email address")
+          }
+        })
+
+        function getUrlVars() {
+          var vars = {};
+          var parts = window.location.href.replace(/[?&]+([^=&]+)=([^&]*)/gi, function (m, key, value) {
+            vars[key] = value
+          });
+          return vars
+        }
+
+        $("#myfile").change(function (evt) {
+          var f = evt.target.files[0]
+          if (f) {
+            var r = new FileReader()
+            r.onload = function (e) {
+              lines = e.target.result.split(/\n/)
+              $(lines).each(function (index, line) {
+                if (line.match(/.*,.*,.*,.*,.*/)) {
+                  target_elements = line.split(',')
+                  new_target = { 
+                    "address": target_elements[0],
+                    "campaign": campaign,
+                    "first_name": target_elements[1],
+                    "last_name": target_elements[2],
+                    "position": target_elements[3],
+                    "custom": target_elements[4]
+                  }
+                  $.ajax(
+                    "/create_target", 
+                    {
+                      data: JSON.stringify(new_target),
+                      contentType : 'application/json',
+                      type : 'POST'
+                    }
+                  ).done(function( data ) {
+                    showTarget(data)
+                  })
+                }
+              })
+            }
+            r.readAsText(f)
+            //r.readAsArrayBuffer(f);
+          } else {
+            console.log("failed")
+          }
+        });
+
+        var campaign = decodeURI(getUrlVars('campaign').campaign)
+
+        $.getJSON("/get_targets?campaign=" + campaign, function (data) {
+          $.each(data, function (key, val) {
+            showTarget(val)
+          })
+        })
+      })
+    </script>
+  </head>
+
+  <body>
+
+    <nav class="custom-nav">
+      <div class="form-inline" role="group">
+        <label class="form-label mr-2" for="myFile">Upload Targets CSV:</label>
+        <input id="myfile" type="file" value="Upload CSV"></input>
+        <button type="button" class="btn btn-primary mr-2" id="back_to_campaign"><i class="fas fa-arrow-left"></i> Back
+          to Campaign</button>
+      </div>
+    </nav>
+
+    <table class="table" id="targets">
+      <tr>
+        <th>Email</th>
+        <th>First Name</th>
+        <th>Last Name</th>
+        <th>Position</th>
+        <th>Custom</th>
+        <th>Phished</th>
+        <th>Target</th>
+      </tr>
+      <tr>
+        <td><input class="form-control" id="add_email" type="text" style="width:100%"></input></td>
+        <td><input class="form-control" id="add_first_name" type="text" style="width:100%"></input></td>
+        <td><input class="form-control" id="add_last_name" type="text" style="width:100%"></input></td>
+        <td><input class="form-control" id="add_position" type="text" style="width:100%"></input></td>
+        <td><input class="form-control" id="add_custom" type="text" style="width:100%"></input></td>
+        <td></td>
+        <td><button class="btn btn-primary" id="manual_add_target"><i class="fas fa-plus"></i> Add Target</button></td>
+      </tr>
+    </table>
+  </body>
+
+</html>

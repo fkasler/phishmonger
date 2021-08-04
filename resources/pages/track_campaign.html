@@ -1,0 +1,549 @@
+<!doctype html>
+<html>
+
+<body>
+
+  <head>
+    <title>Phishmonger</title>
+    <link rel="shortcut icon" href="favicon.ico">
+    <link rel="stylesheet" href="/static/css/trackCamp.css">
+    <link rel="stylesheet" href="/static/css/bootstrap.min.css">
+    <script src="/static/js/jquery-3.4.1.slim.min.js"></script>
+    <script src="/static/js/popper.min.js"></script>
+    <script src="/static/js/bootstrap.min.js"></script>
+    <script src="/static/js/2d526206ed.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/static/js/Graph.min.js"></script>
+    <script src="/static/js/d3.v2.min.js"></script>
+    <script src="/static/js/timeknots.min.js"></script>
+    <script src="/static/js/html2canvas.min.js"></script>
+    <script src="/static/js/chartjs-plugin-datalabels.min.js"></script>
+    <script src="/static/js/jszip.min.js"></script>
+    <script src="/static/js/jszip-utils.js"></script>
+    <script src="/static/js/FileSaver.min.js"></script>
+    <script src="/static/js/jquery.min.js"></script>
+    <script src="/static/js/emotion-ratings.js"></script>
+    <script>
+      $(function () {
+        var socket = io();
+
+        socket.on('new_event', function (new_event) {
+          if (new_event.campaign == campaign) {
+            showEvent(new_event, true)
+          }
+        })
+
+        socket.on('server_message', function (msg) {
+          alert(msg)
+        })
+
+        socket.on('smtp_command', function (smtp) {
+          if (smtp.campaign == campaign) {
+            if ($(".smtp_command").length > 14) {
+              $(".smtp_command")[0].remove()
+            }
+            $('#smtp_log').append($('<li type="text" class="smtp_command">').text(smtp.data));
+          }
+        })
+
+        $(document).on('click', '#schedule_campaign', function () {
+          let epoch_start = new Date($("#scheduled_time").val()).getTime()
+          console.log(epoch_start)
+          $.ajax(
+            "/schedule_campaign", 
+            {
+              data: JSON.stringify({campaign: campaign, start_time: epoch_start}),
+              contentType : 'application/json',
+              type : 'PUT'
+            } 
+          ).done(function( data ) {
+            alert(data)
+          })
+        })
+
+        $(document).on('click', '#send_campaign', function () {
+          $.ajax(
+            "/send_campaign", 
+            {
+              data: JSON.stringify({campaign: campaign}),
+              contentType : 'application/json',
+              type : 'PUT'
+            } 
+          ).done(function( data ) {
+            alert(data)
+          })
+        })
+
+        $(document).on('click', '#cancel_campaign', function () {
+          $.ajax(
+            "/cancel_campaign", 
+            {
+              data: JSON.stringify({campaign: campaign}),
+              contentType : 'application/json',
+              type : 'PUT'
+            } 
+          ).done(function( data ) {
+            alert(data)
+          })
+        })
+
+        $(document).on('click', '#export_csv', function () {
+          if(market_id != 0){
+            //alert(market_id)
+            jQuery.noConflict(); 
+            $('#surveyModal').modal('show');
+            return
+          }
+          let target_map = {}
+          let csv_output = '"timestamp","source_ip","target","event_type","event_data"\n'
+          $("#events > tr").each(function () {
+            let row_data = $(this).children()
+            let timestamp = $(row_data[0]).text()
+            let source_ip = $(row_data[1]).text()
+            let target = $(row_data[2]).text()
+            let event_type = $(row_data[3]).text()
+            let event_data = $(row_data[4]).text()
+            if (event_type == 'EMAIL_SENT') {
+              target_map[target] = event_data
+              target = event_data
+            } else if ((typeof target_map[target]) != 'undefined') {
+              target = target_map[target]
+            }
+            csv_output += (`"${timestamp}","${source_ip}","${target}","${event_type}","${event_data.replace(/"/g, '""')}"\n`)
+          })
+          //copy_to_clipboard(csv_output)
+          //alert('report copied to clipboard')
+          var zip = new JSZip()
+          zip.file("phishmonger_results.csv", csv_output)
+          html2canvas(document.querySelector("#campaign-canvas-holder")).then(canvas => {
+            camp_img = canvas.toDataURL().split(',')[1]
+            var img = zip.folder("images")
+            img.file("campaign.png", camp_img, { base64: true })
+            html2canvas(document.querySelector("#clicks-canvas-holder")).then(canvas => {
+              clicks_img = canvas.toDataURL().split(',')[1]
+              img.file("clicks.png", clicks_img, { base64: true })
+              zip.generateAsync({ type: "blob" })
+                .then(function (content) {
+                  saveAs(content, campaign + "_phishing_results.zip")
+                })
+            })
+          })
+        })
+
+        $(document).on('click', '#edit_targets', function () {
+          document.location = `/edit_targets?campaign=${campaign}`
+        });
+
+        function showEvent(new_event, reDraw) {
+          let human_timestamp = new Date(new_event.event_timestamp).toLocaleString()
+          $("#events").append(` \
+            <tr>\
+              <td>${human_timestamp}</td>\
+              <td><a href="https://www.infobyip.com/ip-${new_event.event_ip}.html" target="_blank">${new_event.event_ip}</a></td>\
+              <td><a href="/view_target?target_id=${new_event.target}">${new_event.target}</a></td>\
+              <td>${new_event.event_type}</td>\
+              <td class="data-cell">${new_event.event_data}</td>\
+            </tr>\
+          `)
+          converted_time = new Date(new_event.event_timestamp).toISOString()
+          if (new_event.event_type == 'EMAIL_SENT') {
+            window.campaignMetrics.sent_emails += 1
+            window.timelineData.push({ lineWidth: 2, background: "#999", name: new_event.event_type, date: converted_time, color: window.chartColors.blue })
+          }
+          if ((new_event.event_type == 'CLICK') || (new_event.event_type == 'DIRECT_DOWNLOAD')) {
+            window.campaignMetrics.clicks += 1
+            if (!window.campaignMetrics.visit_ids.includes(new_event.target)) {
+              window.campaignMetrics.visit_ids.push(new_event.target)
+            }
+            window.timelineData.push({ lineWidth: 2, background: "#999", name: new_event.event_type, date: converted_time, color: window.chartColors.green })
+          }
+          if (new_event.event_type == 'COOKIE_DATA') {
+            window.campaignMetrics.cookies += 1
+            window.timelineData.push({ lineWidth: 2, background: "#999", name: new_event.event_type, date: converted_time, color: window.chartColors.yellow })
+          }
+          if (new_event.event_type == 'POST_DATA') {
+            window.campaignMetrics.posts += 1
+            window.timelineData.push({ lineWidth: 2, background: "#999", name: new_event.event_type, date: converted_time, color: window.chartColors.orange })
+          }
+          if (new_event.event_type == 'DIRECT_DOWNLOAD') {
+            window.campaignMetrics.downloads += 1
+            window.timelineData.push({ lineWidth: 2, background: "#999", name: new_event.event_type, date: converted_time, color: window.chartColors.red })
+          }
+          if (new_event.event_type == 'ERROR') {
+            window.campaignMetrics.errors += 1
+            window.timelineData.push({ lineWidth: 2, background: "#999", name: new_event.event_type, date: converted_time, color: window.chartColors.purple })
+          }
+          if (reDraw) {
+            $("#timeline").empty()
+            TimeKnots.draw("#timeline", window.timelineData, { lineWidth: 2, radius: 2, color: "#999", height: 40, width: screen.width, showLabels: true, labelFormat: "%H:%M" });
+            updateCampaignChart(window.campaignDoughnut)
+            updateClickChart(window.clicksDoughnut)
+          }
+        }
+
+        function getUrlVars() {
+          var vars = {};
+          var parts = window.location.href.replace(/[?&]+([^=&]+)=([^&]*)/gi, function (m, key, value) {
+            vars[key] = value
+          });
+          return vars
+        }
+
+
+        window.chartColors = {
+          red: 'rgb(255, 99, 132)',
+          orange: 'rgb(255, 159, 64)',
+          yellow: 'rgb(255, 205, 86)',
+          green: 'rgb(75, 192, 192)',
+          blue: 'rgb(54, 162, 235)',
+          purple: 'rgb(153, 102, 255)',
+          grey: 'rgb(201, 203, 207)'
+        }
+
+        window.timelineData = []
+
+        window.campaignMetrics = {
+          sent_emails: 0,
+          clicks: 0,
+          cookies: 0,
+          posts: 0,
+          downloads: 0,
+          errors: 0,
+          visit_ids: []
+        }
+
+        var randomScalingFactor = function () {
+          return Math.round(Math.random() * 100);
+        }
+
+        var campaignConfig = {
+          type: 'doughnut',
+          data: {
+            datasets: [{
+              data: [
+                window.campaignMetrics.sent_emails,
+                window.campaignMetrics.clicks,
+                window.campaignMetrics.cookies,
+                window.campaignMetrics.posts,
+                window.campaignMetrics.downloads,
+                window.campaignMetrics.errors
+              ],
+              backgroundColor: [
+                window.chartColors.blue,
+                window.chartColors.green,
+                window.chartColors.yellow,
+                window.chartColors.orange,
+                window.chartColors.red,
+                window.chartColors.purple,
+              ],
+              label: 'Dataset 1'
+            }],
+            labels: [
+              'Sent',
+              'Clicks',
+              'Cookies',
+              'Post Data',
+              'Downloads',
+              'Errors'
+            ]
+          },
+          options: {
+            responsive: true,
+            legend: {
+              position: 'top',
+            },
+            title: {
+              display: true,
+              text: 'Campaign Results'
+            },
+            animation: {
+              animateScale: true,
+              animateRotate: true
+            },
+            circumference: Math.PI,
+            rotation: -Math.PI,
+            plugins: {
+              datalabels: {
+                backgroundColor: function (context) {
+                  return context.dataset.backgroundColor;
+                },
+                borderColor: 'white',
+                borderRadius: 25,
+                borderWidth: 2,
+                color: 'white',
+                anchor: 'end',
+                display: function (context) {
+                  var dataset = context.dataset;
+                  var count = dataset.data.length;
+                  var value = dataset.data[context.dataIndex];
+                  return value;
+                },
+                font: {
+                  weight: 'bold'
+                },
+                formatter: Math.round
+              }
+            }
+          }
+        };
+
+        var clicksConfig = {
+          type: 'doughnut',
+          data: {
+            datasets: [{
+              data: [
+                window.campaignMetrics.clicks,
+                window.campaignMetrics.visit_ids.length
+              ],
+              backgroundColor: [
+                window.chartColors.green,
+                window.chartColors.purple
+              ],
+              label: 'Dataset 1'
+            }],
+            labels: [
+              'Clicks',
+              'Unique Visits'
+            ]
+          },
+          options: {
+            responsive: true,
+            legend: {
+              position: 'top',
+            },
+            title: {
+              display: true,
+              text: 'Click Results'
+            },
+            animation: {
+              animateScale: true,
+              animateRotate: true
+            },
+            circumference: Math.PI,
+            rotation: -Math.PI,
+            plugins: {
+              datalabels: {
+                backgroundColor: function (context) {
+                  return context.dataset.backgroundColor;
+                },
+                borderColor: 'white',
+                borderRadius: 25,
+                borderWidth: 2,
+                color: 'white',
+                anchor: 'end',
+                display: function (context) {
+                  var dataset = context.dataset;
+                  var count = dataset.data.length;
+                  var value = dataset.data[context.dataIndex];
+                  return value;
+                },
+                font: {
+                  weight: 'bold'
+                },
+                formatter: Math.round
+              }
+            }
+          }
+        };
+
+        function updateCampaignChart(chart) {
+          let new_data = [
+            window.campaignMetrics.sent_emails,
+            window.campaignMetrics.clicks,
+            window.campaignMetrics.cookies,
+            window.campaignMetrics.posts,
+            window.campaignMetrics.downloads,
+            window.campaignMetrics.errors
+          ]
+          chart.data.datasets[0].data = new_data
+          chart.update()
+        }
+
+        function updateClickChart(chart) {
+          let new_data = [
+            window.campaignMetrics.clicks,
+            window.campaignMetrics.visit_ids.length
+          ]
+          chart.data.datasets[0].data = new_data
+          chart.update()
+        }
+
+        var campCtx = document.getElementById('campaign-chart-area').getContext('2d');
+        window.campaignDoughnut = new Chart(campCtx, campaignConfig);
+
+        document.getElementById('campaign-chart-area').onclick = function (evt) {
+          var activePoints = window.campaignDoughnut.getElementsAtEvent(evt);
+          if (activePoints[0]) {
+            var chartData = activePoints[0]['_chart'].config.data;
+            var idx = activePoints[0]['_index'];
+
+            var label = chartData.labels[idx];
+            let event_type = "CLICK"
+            if (label == "Sent") {
+              event_type = "EMAIL_SENT"
+            } else if (label == "Cookies") {
+              event_type = "COOKIE_DATA"
+            } else if (label == "Post Data") {
+              event_type = "POST_DATA"
+            } else if (label == "Downloads") {
+              event_type = "DIRECT_DOWNLOAD"
+            } else if (label == "Errors") {
+              event_type = "ERROR"
+            }
+            location.href = "/search_events?campaign=" + campaign + "&event_type=" + event_type
+          }
+        };
+
+        var clicksCtx = document.getElementById('clicks-chart-area').getContext('2d');
+        window.clicksDoughnut = new Chart(clicksCtx, clicksConfig);
+
+        document.getElementById('clicks-chart-area').onclick = function (evt) {
+          var activePoints = window.clicksDoughnut.getElementsAtEvent(evt);
+          if (activePoints[0]) {
+            var chartData = activePoints[0]['_chart'].config.data;
+            var idx = activePoints[0]['_index'];
+
+            var label = chartData.labels[idx];
+            let event_type = "CLICK"
+            let unique_visits = "false"
+            if (label == "Unique Visits") {
+              unique_visits = "true"
+            }
+            location.href = "/search_events?campaign=" + campaign + "&event_type=" + event_type + "&unique=" + unique_visits
+          }
+        };
+
+        var campaign = decodeURI(getUrlVars('campaign').campaign)
+
+        var market_id = getUrlVars('campaign').market_id
+
+        $.getJSON("/get_campaign_events?campaign=" + campaign, function (data) {
+          $.each(data, function (key, val) {
+            reDraw = false
+            if (key == (data.length - 1)) {
+              reDraw = true
+            }
+            showEvent(val, reDraw)
+          });
+        });
+
+        copy_to_clipboard = function (data) {
+          // Create a dummy input to copy the string inside it
+          var dummy = document.createElement("textarea");
+          // Add it to the document
+          document.body.appendChild(dummy);
+          // Set its ID
+          dummy.setAttribute("id", "dummy_id");
+          // Output the array into it
+          document.getElementById("dummy_id").value = data;
+          // Select it
+          dummy.select();
+          // Copy its contents
+          document.execCommand("copy");
+          // Remove it as its not needed anymore
+          document.body.removeChild(dummy);
+        }
+
+        var emotionsArray = ['angry','disappointed','meh', 'happy', 'smile'];
+
+        var rating = $("#myRating").emotionsRating({
+          emotions: emotionsArray, inputName: "emotions"
+        });
+
+        $("#scheduled_time").val(new Date().toLocaleString())
+
+      })
+    </script>
+  </head>
+
+  <body>
+    <div class="modal fade" id="surveyModal" tabindex="-1" role="dialog" aria-labelledby="surveyModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog modal-xl" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="surveyModalLabel">Phish Market Stats</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div id="surveyHTML" class="modal-body">
+  
+          <div class="md-form mb-5">
+            <i class="fas fa-filter prefix grey-text"></i>
+            <input type="email" id="template_title" class="form-control validate">
+            <label data-error="wrong" data-success="right" for="form29">Spam Filter</label>
+          </div>
+  
+          <div class="md-form mb-5">
+            <i class="fas fa-list-alt prefix grey-text"></i>
+            <input type="text" id="template_description" class="form-control validate">
+            <label data-error="wrong" data-success="right" for="form32">Where You Whitelisted?</label>
+          </div>
+  
+          <div class="md-form">
+            <i class="fas fa-star prefix grey-text"></i>
+            <textarea type="text" id="report_description" class="md-textarea form-control" rows="4"></textarea>
+            <div id="myRating"></div>
+            <label data-error="wrong" data-success="right" for="form8">Star Rating</label>
+          </div>
+
+          <div class="md-form">
+            <i class="fas fa-comment prefix grey-text"></i>
+            <textarea type="text" id="report_description" class="md-textarea form-control" rows="4"></textarea>
+            <label data-error="wrong" data-success="right" for="form8">Campaign Notes</label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+          <button type="button" class="btn btn-primary" data-dismiss="modal" onclick="sendSurveyToPhishMarket()"><i
+            class="fas fa-upload"></i> Send!</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+    <nav class="custom-nav">
+      <form class="form-inline">
+        <a href="/admin" class="btn btn-primary mr-5"><i class="fas fa-arrow-left"></i> Back to Campaigns</a>
+        <button type="button" class="btn btn-primary mr-5" id="edit_targets"><i class="fas fa-plus"></i> Add/Modify
+          Targets</button>
+        <input class="form-control" id="scheduled_time" type="text" value=""></input>
+        <button type="button" class="btn btn-primary mr-5" id="schedule_campaign"><i class="far fa-calendar-alt"></i>
+          Schedule Campaign</button>
+        <button type="button" class="btn btn-success mr-2 mr-2" id="send_campaign"><i class="far fa-paper-plane"></i>
+          Send Campaign</button>
+        <button type="button" class="btn btn-danger mr-2" id="cancel_campaign"><i class="far fa-stop-circle"></i> Stop
+          Campaign!</button>
+        <button type="button" class="btn btn-primary mr-2" id="export_csv"><i class="fas fa-file-export"></i> Export
+          Results</button>
+      </form>
+    </nav>
+
+
+    <div id="capture">
+      <div class="chart-container">
+        <div id="campaign-canvas-holder" style="width:40%">
+          <canvas id="campaign-chart-area"></canvas>
+        </div>
+        <div id="clicks-canvas-holder" style="width:40%">
+          <canvas id="clicks-chart-area"></canvas>
+        </div>
+      </div>
+    </div>
+    <div id="timeline" style="width:100%;height: 40px;"></div>
+    <div>SMTP Log:</div>
+    <ul id="smtp_log">
+    </ul>
+    <table class="table" id="events">
+      <tr>
+        <th>TimeStamp</th>
+        <th>Source IP</th>
+        <th>Target</th>
+        <th>Event</th>
+        <th>Data</th>
+      </tr>
+    </table>
+
+</body>
+</html>

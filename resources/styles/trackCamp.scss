@@ -1,0 +1,53 @@
+$themeGray: #f9f7f7;
+$themeSoft: #dbe2ef;
+$themeMain: #3f72af;
+$themeDark: #112d4e;
+
+.custom-nav {
+  width: 100%;
+  height: auto;
+  padding: 10px;
+  background-color: $themeDark;
+  margin-bottom: 20px;
+  color: white;
+}
+
+.data-cell {
+  max-width: 600px;
+  overflow: scroll;
+}
+
+//forrest CSS
+
+canvas {
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+}
+.chart-container {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+// overrides while I'm using the CDN
+.btn-primary {
+  background-color: $themeMain !important;
+  border-color: $themeMain !important;
+  color: white !important;
+}
+
+.btn-group {
+  .btn-primary:hover {
+    background-color: $themeDark !important;
+  }
+}
+
+a {
+  color: $themeMain !important;
+}
+
+.table {
+  color: $themeDark !important;
+}
