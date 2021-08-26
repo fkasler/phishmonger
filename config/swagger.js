@@ -12,7 +12,7 @@ exports.options = {
         url: 'https://github.com/fastify/fastify-swagger',
         description: 'Find more info here'
       },
-      host: 'pheedsmischief.com',
+      host: 'yourservernamehere',
       schemes: ['https'],
       consumes: ['application/json'],
       produces: ['application/json'],

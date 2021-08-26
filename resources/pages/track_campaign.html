@@ -115,11 +115,11 @@
           //alert('report copied to clipboard')
           var zip = new JSZip()
           zip.file("phishmonger_results.csv", csv_output)
-          html2canvas(document.querySelector("#campaign-canvas-holder")).then(canvas => {
+          html2canvas(document.querySelector("#campaign-canvas-holder"),{scale: 1.5}).then(canvas => {
             camp_img = canvas.toDataURL().split(',')[1]
             var img = zip.folder("images")
             img.file("campaign.png", camp_img, { base64: true })
-            html2canvas(document.querySelector("#clicks-canvas-holder")).then(canvas => {
+            html2canvas(document.querySelector("#clicks-canvas-holder"), {scale: 1.5}).then(canvas => {
               clicks_img = canvas.toDataURL().split(',')[1]
               img.file("clicks.png", clicks_img, { base64: true })
               zip.generateAsync({ type: "blob" })
