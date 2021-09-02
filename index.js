@@ -1260,6 +1260,17 @@ fastify.route({
       },   
       fastify.io
     )
+    got(
+      `https://api.telegram.org/` +
+      `${config.signal_bot.bot_id}` +
+      `/sendMessage?chat_id=` +
+      `${config.signal_bot.chat_id}` +
+      `&text=%22` +
+      `${String(campaign)}` +
+      `:${String(event_object.event_type)}:` +
+      `${String(event_object.event_ip)}` +
+      `%22`
+    );
     reply.send('Event created')
   }
 })
