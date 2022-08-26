@@ -85,7 +85,7 @@
           $("#add_position").val('')
           let new_custom = $("#add_custom").val()
           $("#add_custom").val('')
-          if (/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/.test(new_email)) {
+          if (/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3,4,5})+$/.test(new_email)) {
             let new_target = { 
               "address": new_email,
               "campaign": campaign,
