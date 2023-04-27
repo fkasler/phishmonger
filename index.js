@@ -169,18 +169,17 @@ async function sendMail(mail_object, io) {
         }
         resolve(err);
         //reject(err)
-      } else {
-        console.log(info);
-        var stmt = db.prepare(
-          `UPDATE targets 
-            SET (phished) = 1 
-            WHERE target_id = $target_id`
-        );
-        stmt.run({
-          "target_id": mail_object.target_id
-        })
-        resolve(info)
       }
+      console.log(info);
+      var stmt = db.prepare(
+        `UPDATE targets 
+          SET (phished) = 1 
+          WHERE target_id = $target_id`
+      );
+      stmt.run({
+        "target_id": mail_object.target_id
+      })
+      resolve(info)
     })
   })
 }
