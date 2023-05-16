@@ -88,12 +88,12 @@
         })
 
         $(document).on('click', '#export_csv', function () {
-          if(market_id != 0){
-            //alert(market_id)
-            jQuery.noConflict(); 
-            $('#surveyModal').modal('show');
-            return
-          }
+          //if(market_id != 0){
+          //  //alert(market_id)
+          //  jQuery.noConflict(); 
+          //  $('#surveyModal').modal('show');
+          //  return
+          //}
           let target_map = {}
           let csv_output = '"timestamp","source_ip","target","event_type","event_data"\n'
           $("#events > tr").each(function () {
